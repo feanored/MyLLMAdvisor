@@ -400,6 +400,20 @@ metadado `equation_number` (`RetrievalService.backfill_mentioned_equations`).
 Um mesmo número em dois documentos: vale o do trecho mais próximo da
 pergunta.
 
+**Fórmulas renderizadas uma vez só.** A resposta chega em pedaços, e o
+texto é refeito a cada um. Se o MathJax renderizasse tudo de novo a cada
+pedaço, cada fórmula voltaria a ser LaTeX cru por um instante: a tela pisca
+e o layout pula. Por isso, como as figuras (que reaproveitam o mesmo `<img>`),
+`answer.js` renderiza cada fórmula distinta **uma única vez**
+(`MathJax.tex2chtmlPromise`) e guarda o resultado; no texto, cada fórmula é
+um encaixe (`.math-slot`) que recebe na hora uma cópia do nó já pronto, sem
+passar pelo LaTeX cru. Como o HTML do texto não é fatiado, funciona também
+com fórmula dentro de negrito, título ou tabela. O encaixe guarda o LaTeX de
+origem (`data-source`): ao reabrir uma conversa salva, `restoreMath` as
+renderiza de novo (o CSS dos símbolos que o MathJax gera não vai junto no HTML
+salvo), e no HTML baixado elas voltam a ser LaTeX, que o MathJax do próprio
+arquivo renderiza.
+
 **Resgate de figura citada só em texto.** A busca por similaridade pode
 recuperar um trecho de TEXTO que só *menciona* uma figura ("veja a Figura
 2.53 para mais detalhes") sem que o chunk da PRÓPRIA figura entre no top N

@@ -80,7 +80,9 @@ const figPlaceholder = idx => `@@FIGURE_TAG_${idx}@@`;
 // para quem chama decidir como inseri-las. `figures`: figuras recuperadas do
 // RAG a embutir no texto; `equations`: equações numeradas ({number, latex}) a
 // exibir logo depois da 1ª menção a cada uma; vazio/null = nenhuma.
-function decodeCore(s, figures, equations) {
+// `mathSlots`: fórmulas viram encaixes renderizados uma vez só (ver
+// renderAnswerBox); sem ele, ficam como texto LaTeX pro typesetMath.
+function decodeCore(s, figures, equations, { mathSlots = false } = {}) {
   const codeBlocks = [];
   const placeholder = idx => `@@CODE_BLOCK_${idx}@@`;
 
@@ -187,7 +189,7 @@ function decodeCore(s, figures, equations) {
   });
 
   mathBlocks.forEach((math, idx) => {
-    text = text.replace(mathPlaceholder(idx), () => escapeHtml(math));
+    text = text.replace(mathPlaceholder(idx), () => (mathSlots ? mathSlotHtml(math) : escapeHtml(math)));
   });
 
   return { html: text, figureMarks };
@@ -217,12 +219,112 @@ export function decode(s, figures, equations) {
   return text;
 }
 
+// --- Fórmulas renderizadas uma vez só ------------------------------------------
+// Mesmo princípio das figuras: a resposta chega em pedaços e o texto é refeito
+// a cada um; se o MathJax renderizasse tudo de novo a cada pedaço, cada fórmula
+// voltaria a ser LaTeX cru por um instante (a tela pisca e o layout pula). Aqui
+// cada fórmula distinta (o texto-fonte, com delimitadores) é renderizada uma
+// única vez e guardada; os encaixes (.math-slot) recebem uma cópia do nó pronto,
+// na hora, sem passar pelo LaTeX cru. Funciona dentro de negrito, título ou
+// tabela, porque o HTML do texto continua inteiro, sem ser fatiado.
+const mathIds = new Map();     // fonte -> id do encaixe
+const mathSources = new Map(); // id -> fonte
+const mathCache = new Map();   // id -> nó já renderizado pelo MathJax
+const mathPending = new Set(); // ids sendo renderizados agora
+let mathJaxReady = null;
+
+function mathIdOf(source) {
+  if (!mathIds.has(source)) {
+    mathIds.set(source, mathIds.size + 1);
+    mathSources.set(mathIds.get(source), source);
+  }
+  return mathIds.get(source);
+}
+
+// Até a fórmula ser renderizada (ou se o MathJax nem carregar), o encaixe
+// mostra o próprio LaTeX. `data-source` guarda o LaTeX pra quando o HTML for
+// reaproveitado fora desta sessão (ver restoreMath e answer-export.js).
+function mathSlotHtml(source) {
+  const attr = escapeHtml(source).replace(/"/g, '&quot;');
+  return `<span class="math-slot" data-math-id="${mathIdOf(source)}" data-source="${attr}">${escapeHtml(source)}</span>`;
+}
+
+// Conversa salva reaberta: o HTML guardado traz as fórmulas já renderizadas,
+// mas o CSS dos símbolos que o MathJax gera não vem junto (só existe na sessão
+// em que elas foram renderizadas). Volta cada encaixe ao LaTeX e renderiza de
+// novo — uma vez por fórmula, pelo mesmo cache.
+export function restoreMath(root) {
+  root.querySelectorAll('.math-slot[data-source]').forEach(slot => {
+    const source = slot.dataset.source;
+    slot.dataset.mathId = mathIdOf(source);
+    slot.classList.remove('rendered');
+    slot.textContent = source;
+  });
+  fillMathSlots(root);
+}
+
+function parseMathSource(source) {
+  if (source.startsWith('$$')) return { tex: source.slice(2, -2), display: true };
+  if (source.startsWith('\\[')) return { tex: source.slice(2, -2), display: true };
+  if (source.startsWith('\\(')) return { tex: source.slice(2, -2), display: false };
+  return { tex: source.slice(1, -1), display: false };  // $...$
+}
+
+// O script do MathJax carrega de forma assíncrona (CDN): espera ele ficar pronto.
+function whenMathJaxReady() {
+  if (!mathJaxReady) {
+    mathJaxReady = new Promise(resolve => {
+      const check = () => (window.MathJax && MathJax.tex2chtmlPromise && MathJax.startup
+        ? MathJax.startup.promise.then(() => resolve(MathJax))
+        : setTimeout(check, 100));
+      check();
+    });
+  }
+  return mathJaxReady;
+}
+
+function fillSlot(slot, node) {
+  slot.replaceChildren(node.cloneNode(true));
+  slot.classList.add('rendered');
+}
+
+async function renderMath(id, source) {
+  mathPending.add(id);
+  try {
+    const mj = await whenMathJaxReady();
+    const { tex, display } = parseMathSource(source);
+    const node = await mj.tex2chtmlPromise(tex, { display });
+    // Gera o CSS das letras/símbolos novos dessa fórmula.
+    mj.startup.document.clear();
+    mj.startup.document.updateDocument();
+    mathCache.set(id, node);
+    document.querySelectorAll(`.math-slot[data-math-id="${id}"]:not(.rendered)`).forEach(slot => fillSlot(slot, node));
+  } catch (e) {
+    // fórmula fica como LaTeX: melhor que sumir
+  } finally {
+    mathPending.delete(id);
+  }
+}
+
+function fillMathSlots(root) {
+  root.querySelectorAll('.math-slot:not(.rendered)').forEach(slot => {
+    const id = Number(slot.dataset.mathId);
+    if (mathCache.has(id)) {
+      fillSlot(slot, mathCache.get(id));
+    } else if (!mathPending.has(id) && mathSources.has(id)) {
+      renderMath(id, mathSources.get(id));
+    }
+  });
+}
+
 // Renderiza a resposta incrementalmente: em vez de recriar todo o innerHTML a
 // cada chunk (o que faz as imagens de figuras piscarem, já que <img> reinserida
 // via innerHTML recarrega), atualiza só os trechos de texto e reaproveita o nó
-// <img> já existente quando a figura naquela posição não mudou.
+// <img> já existente quando a figura naquela posição não mudou. As fórmulas
+// entram já renderizadas (ver "Fórmulas renderizadas uma vez só" acima): quem
+// chama não precisa (e não deve) chamar typesetMath depois.
 export function renderAnswerBox(container, rawText, figures, equations) {
-  const { html, figureMarks } = decodeCore(rawText, figures, equations);
+  const { html, figureMarks } = decodeCore(rawText, figures, equations, { mathSlots: true });
   const segRe = /@@FIGURE_TAG_(\d+)@@/g;
   const segments = [];
   let last = 0, m;
@@ -243,7 +345,13 @@ export function renderAnswerBox(container, rawText, figures, equations) {
         if (el) container.replaceChild(span, el); else container.appendChild(span);
         el = span;
       }
-      if (el.innerHTML !== seg.html) el.innerHTML = seg.html;
+      // Compara com o HTML-fonte guardado, não com o innerHTML: depois que os
+      // encaixes recebem as fórmulas renderizadas, o innerHTML já é outro.
+      if (el.sourceHtml !== seg.html) {
+        el.innerHTML = seg.html;
+        el.sourceHtml = seg.html;
+        fillMathSlots(el);
+      }
     } else if (!(el && el.dataset.segType === 'figure' && el.dataset.figKey === seg.fig.path)) {
       const node = figureNode(seg.fig);
       if (el) container.replaceChild(node, el); else container.appendChild(node);

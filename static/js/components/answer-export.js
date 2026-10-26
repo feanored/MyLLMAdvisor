@@ -30,6 +30,9 @@ function inlineRenderedImages(liveRoot, cloneRoot) {
 function renderedHtml(box) {
   const clone = box.cloneNode(true);
   inlineRenderedImages(box, clone);
+  // As fórmulas voltam a ser LaTeX: o MathJax do arquivo baixado as renderiza
+  // (o HTML já renderizado depende de CSS que só existe nesta página).
+  clone.querySelectorAll('.math-slot[data-source]').forEach(slot => { slot.textContent = slot.dataset.source; });
   return clone.innerHTML.trim();
 }
 

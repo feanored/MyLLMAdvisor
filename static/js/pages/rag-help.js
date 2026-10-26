@@ -7,7 +7,7 @@ import { Api } from '../services/api.js';
 import { readSseStream } from '../services/sse.js';
 import { Timers } from '../services/timer.js';
 import { escapeHtml, parseJson } from '../services/text.js';
-import { decode, renderAnswerBox, typesetMath } from '../components/answer.js';
+import { decode, renderAnswerBox, restoreMath } from '../components/answer.js';
 import { downloadAnswer } from '../components/answer-export.js';
 import { renderKeywords } from '../components/keywords.js';
 import { appendOptions } from '../components/select.js';
@@ -277,7 +277,7 @@ function switchConversation(id) {
   const threadInner = byId('thread-inner');
   threadInner.innerHTML = stored.turns.map(t => t.html).join('');
   wireRestoredTurns();
-  typesetMath(threadInner);
+  restoreMath(threadInner);
   scrollThreadToBottom();
   renderConversationsList();
 }
@@ -529,7 +529,6 @@ async function ask() {
       if (!turn.timers.running('answer')) turn.timers.start('answer');
       answerBuf += data;
       renderAnswerBox(turn.answerBox, answerBuf, turnFigures, turnEquations);
-      typesetMath(turn.answerBox);
       els.status.textContent = 'Respondendo..';
       scrollThreadToBottom();
     },
@@ -537,7 +536,6 @@ async function ask() {
       finish('Concluído.');
       if (answerBuf.trim()) {
         renderAnswerBox(turn.answerBox, answerBuf, turnFigures, turnEquations);
-        typesetMath(turn.answerBox);
       }
       scrollThreadToBottom();
       persistTurn(askConversationId, question, turn);

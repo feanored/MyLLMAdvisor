@@ -61,12 +61,12 @@ export class MultiSelect {
     const total = this.items.length;
     const n = this.selected.size;
     if (n === 0 || n === total) {
-      this.button.textContent = '- todas -';
+      this.button.textContent = 'Todos os documentos';
     } else if (n === 1) {
       const value = [...this.selected][0];
       this.button.textContent = this.items.find(it => it.value === value)?.label ?? value;
     } else {
-      this.button.textContent = `${n} selecionadas`;
+      this.button.textContent = `${n} selecionados`;
     }
   }
 
@@ -88,7 +88,7 @@ export class MultiSelect {
 
     const allLabel = document.createElement('label');
     allLabel.className = 'msel-option msel-all';
-    allLabel.innerHTML = '<input type="checkbox"> Todos';
+    allLabel.innerHTML = '<input type="checkbox"> Todos os documentos';
     this.allCheckbox = allLabel.querySelector('input');
     this.allCheckbox.addEventListener('change', () => {
       const checked = this.allCheckbox.checked;

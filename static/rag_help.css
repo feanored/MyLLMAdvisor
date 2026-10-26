@@ -76,11 +76,30 @@
 
 .answer-box { min-height: 1.5rem; white-space: pre-wrap; word-break: break-word;
               font-size: .95rem; line-height: 1.6; color: #2d3748; }
-/* Equação destacada mais larga que a tela (comum no celular): rola só ela, não a página. */
-.answer-box mjx-container[display="true"] { max-width: 100%; overflow-x: auto; overflow-y: hidden; }
+/* Nada da resposta pode alargar a página. Equação destacada, figura e tabela
+   mais largas que a resposta rolam sozinhas, cada uma com sua barra (a
+   equação, pelo MathJax: displayOverflow 'scroll' em templates/orientador.html;
+   fórmula no meio do texto quebra a linha). O overflow da própria resposta é
+   só a rede de segurança pro que sobrar. */
+.answer-box { overflow-x: auto; }
+.answer-figure { display: block; max-width: 100%; overflow-x: auto; margin-top: .5rem; }
+.answer-figure img { display: block; max-width: 100%; height: auto; object-fit: contain; }
+.answer-figure-caption { display: block; font-size: .85rem; color: var(--muted); margin-top: .25rem; }
+/* Em tela estreita a figura não encolhe até virar miniatura ilegível: mantém
+   pelo menos 480px de largura e a moldura rola. */
+@media (max-width: 760px) {
+  .answer-figure img { max-width: none; width: 100%; min-width: 480px; }
+  /* Tabela larga: colunas com largura legível e barra de rolagem na própria
+     tabela, em vez de espremer o texto até uma letra por linha. */
+  .answer-box table { display: block; overflow-x: auto; width: auto; max-width: 100%; }
+  .answer-box th, .answer-box td { min-width: 7rem; }
+}
 .answer-box table { width: 100%; border-collapse: collapse; margin: 1rem 0;
                      border: 1px solid #cbd5e0; border-radius: 10px; overflow: hidden; }
-.answer-box th, .answer-box td { padding: .75rem 1rem; border: 1px solid #e2e8f0; text-align: left; }
+/* Células não quebram palavras no meio ("Estabilida-de"): o word-break da
+   resposta deixaria a tabela espremer as colunas até isso; larga demais, ela rola. */
+.answer-box th, .answer-box td { padding: .75rem 1rem; border: 1px solid #e2e8f0; text-align: left;
+                                 word-break: normal; overflow-wrap: normal; }
 .answer-box th { background: var(--tint); color: #2d3748; font-weight: 700; }
 .answer-box tr:nth-child(even) td { background: #f8fafc; }
 .answer-box table tbody tr td { background: #ffffff; }

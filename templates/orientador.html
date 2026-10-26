@@ -6,10 +6,13 @@
 <link rel="stylesheet" href="/static/rag_help.css">
 <script>
   window.MathJax = {
-    tex: { inlineMath: [['$', '$'], ['\\(', '\\)']], displayMath: [['$$', '$$'], ['\\[', '\\]']] }
+    tex: { inlineMath: [['$', '$'], ['\\(', '\\)']], displayMath: [['$$', '$$'], ['\\[', '\\]']] },
+    // Equação destacada mais larga que a resposta ganha barra de rolagem
+    // própria; fórmula no meio do texto quebra a linha em vez de cortar.
+    output: { displayOverflow: 'scroll', linebreaks: { inline: true } }
   };
 </script>
-<script id="MathJax-script" async src="https://cdn.jsdelivr.net/npm/mathjax@3/es5/tex-mml-chtml.js"></script>
+<script id="MathJax-script" async src="https://cdn.jsdelivr.net/npm/mathjax@4.1.3/tex-mml-chtml.js"></script>
 {% endblock %}
 
 {% block sidebar %}

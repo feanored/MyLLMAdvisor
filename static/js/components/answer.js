@@ -157,7 +157,7 @@ function decodeCore(s, figures, equations) {
       if (idx === -1) return match;
       usedIdx.add(idx);
       const placeholderIdx = figureMarks.length;
-      figureMarks.push({ ...figures[idx], withBreak: true });
+      figureMarks.push(figures[idx]);
       return `${match}${figPlaceholder(placeholderIdx)}`;
     });
   }
@@ -199,9 +199,11 @@ function figureNode(fig) {
   wrap.dataset.segType = 'figure';
   wrap.dataset.figKey = fig.path;
   const caption = fig.caption ? escapeHtml(fig.caption) : 'Figura';
-  const captionHtml = fig.caption ? `<div style="font-size:.85rem;color:#718096;margin-top:.25rem;">${caption}</div>` : '';
-  const prefix = fig.withBreak ? '<br>' : '';
-  wrap.innerHTML = `${prefix}${localImageTag(fig.path, caption)}${captionHtml}`;
+  const captionHtml = fig.caption ? `<span class="answer-figure-caption">${caption}</span>` : '';
+  // A imagem fica numa moldura própria que rola na horizontal quando ela é
+  // mais larga que a resposta (tamanho e rolagem: .answer-figure no CSS da
+  // página); a moldura é bloco, então já começa numa linha nova.
+  wrap.innerHTML = `<span class="answer-figure">${localImageTag(fig.path, caption, '')}</span>${captionHtml}`;
   return wrap;
 }
 

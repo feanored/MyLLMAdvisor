@@ -75,12 +75,12 @@ export function downloadAnswer({ answerBox, question, keywords, model, collectio
     /* Mesmas regras da tela (rag_help.css): nada alarga a página, o que é largo rola. */
     body { overflow-wrap: break-word; }
     mjx-container[display="true"] { max-width: 100%; overflow-x: auto; overflow-y: hidden; }
-    .answer-figure { display: block; max-width: 100%; overflow-x: auto; margin-top: .5rem; }
+    .answer-figure { display: block; max-width: 100%; overflow-x: auto; overflow-y: hidden; margin-top: .5rem; }
     .answer-figure img { display: block; max-width: 100%; height: auto; }
     .answer-figure-caption { display: block; font-size: .85rem; color: #718096; margin-top: .25rem; }
     @media (max-width: 760px) {
       .answer-figure img { max-width: none; width: 100%; min-width: 480px; }
-      table { display: block; overflow-x: auto; width: auto; max-width: 100%; }
+      table { display: block; overflow-x: auto; overflow-y: hidden; width: auto; max-width: 100%; }
       th, td { min-width: 7rem; }
     }
     hr { margin: 1rem 0; }

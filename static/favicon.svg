@@ -1,0 +1,6 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 64 64">
+  <rect width="64" height="64" rx="12" fill="#1c3550"/>
+  <text x="32" y="38" text-anchor="middle" fill="#fff"
+        font-family="'Segoe UI', Arial, sans-serif" font-size="27" font-weight="700" letter-spacing="-1">MLA</text>
+  <path d="M15 47h34" stroke="#9fc1e0" stroke-width="3.5" stroke-linecap="round"/>
+</svg>

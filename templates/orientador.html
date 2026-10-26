@@ -1,0 +1,67 @@
+{% extends "base.html" %}
+
+{% block title %}Orientador - My LLM Advisor{% endblock %}
+
+{% block head %}
+<link rel="stylesheet" href="/static/rag_help.css">
+<script>
+  window.MathJax = {
+    tex: { inlineMath: [['$', '$'], ['\\(', '\\)']], displayMath: [['$$', '$$'], ['\\[', '\\]']] }
+  };
+</script>
+<script id="MathJax-script" async src="https://cdn.jsdelivr.net/npm/mathjax@3/es5/tex-mml-chtml.js"></script>
+{% endblock %}
+
+{% block sidebar %}
+<div class="sidebar-top">
+  <button type="button" id="new-conversation-btn" class="new-conversation-btn">+ Nova conversa</button>
+  <button type="button" id="export-conversations-btn" class="icon-btn"
+          title="Exportar conversas" aria-label="Exportar conversas">⬇</button>
+  <button type="button" id="import-conversations-btn" class="icon-btn"
+          title="Importar conversas" aria-label="Importar conversas">⬆</button>
+  <input type="file" id="import-conversations-input" accept=".csv" hidden>
+</div>
+<div class="conversations-list" id="conversations-list"></div>
+{% endblock %}
+
+{% block content %}
+<div class="thread" id="thread">
+  <div class="thread-inner" id="thread-inner">
+    <p class="thread-hint" id="thread-hint">
+      Faça uma pergunta sobre os artigos e livros da base pra começar: o chat
+      lembra da conversa, então pode ir aprofundando em sequência.
+    </p>
+  </div>
+</div>
+
+<footer class="composer">
+  <div class="composer-inner">
+    <textarea id="question" placeholder="Digite sua pergunta sobre os artigos e livros… (Enter envia, Shift+Enter quebra linha)" rows="2"></textarea>
+    <div class="composer-actions">
+      <button id="btn">Perguntar</button>
+      <button id="cancel-btn" style="display:none">Cancelar</button>
+      <div class="msel" id="docs_wrap">
+        <button type="button" id="docs_btn" class="msel-btn" disabled>Carregando documentos…</button>
+        <div class="msel-panel" id="docs_panel" hidden></div>
+      </div>
+      <div class="status-row">
+        <span id="total-timer" class="timer">-</span>
+        <span id="status"></span>
+      </div>
+    </div>
+  </div>
+</footer>
+{% endblock %}
+
+{% block body_end %}
+<dialog id="model-dialog" class="model-dialog">
+  <h2>Trocar modelo</h2>
+  <p>Vale só pra esta conversa: recarregar a página volta ao padrão.</p>
+  <select id="model-select"></select>
+  <div class="row">
+    <button type="button" id="model-cancel-btn" class="btn-secondary">Cancelar</button>
+    <button type="button" id="model-confirm-btn">Usar este modelo</button>
+  </div>
+</dialog>
+<script type="module" src="/static/js/pages/rag-help.js"></script>
+{% endblock %}

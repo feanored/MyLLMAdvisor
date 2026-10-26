@@ -1,0 +1,62 @@
+<!DOCTYPE html>
+<html lang="pt-br">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>{% block title %}My LLM Advisor{% endblock %}</title>
+<link rel="icon" href="/static/favicon.svg" type="image/svg+xml">
+<link rel="icon" href="/favicon.ico" sizes="any">
+<link rel="stylesheet" href="/static/layout.css">
+{% block head %}{% endblock %}
+</head>
+<body>
+{#
+  Layout comum a todas as telas: barra superior + menu lateral (conteúdo da
+  tela em cima, navegação no rodapé) + coluna principal. Tela nova: um
+  template que estende "base.html" preenchendo os blocos "sidebar" e
+  "content", e uma entrada em NAV_ITEMS (models/config.py).
+  `active` (passado por render_template) marca o link da tela atual.
+#}
+{# Ícones do menu, em traço fino como o padrão da barra superior. #}
+{% macro nav_icon(name) -%}
+<svg class="nav-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7"
+     stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+  {%- if name == "chat" %}
+  <path d="M4 5h16v11H9l-5 4z"/><path d="M8 9h8M8 12h5"/>
+  {%- elif name == "upload" %}
+  <path d="M6 3h8l4 4v14H6z"/><path d="M14 3v4h4"/><path d="M12 17v-6M9.5 13.5 12 11l2.5 2.5"/>
+  {%- else %}
+  <circle cx="12" cy="12" r="3"/>
+  {%- endif %}
+</svg>
+{%- endmacro %}
+<div class="app">
+  <header class="app-header">
+    <a href="{{ url_for('index') }}" class="app-title">My LLM Advisor</a>
+    {% block header_actions %}{% endblock %}
+  </header>
+
+  <div class="body-row">
+    <aside class="sidebar">
+      <div class="sidebar-content">
+        {% block sidebar %}{% endblock %}
+      </div>
+      <nav class="sidebar-nav" aria-label="Telas">
+        {% for item in nav_items %}
+        <a href="{{ url_for(item.endpoint) }}"
+           class="nav-link{% if item.endpoint == active %} active{% endif %}"
+           {% if item.endpoint == active %}aria-current="page"{% endif %}>
+          {{ nav_icon(item.icon) }}{{ item.label }}
+        </a>
+        {% endfor %}
+      </nav>
+    </aside>
+
+    <main class="main-col">
+      {% block content %}{% endblock %}
+    </main>
+  </div>
+</div>
+{% block body_end %}{% endblock %}
+</body>
+</html>

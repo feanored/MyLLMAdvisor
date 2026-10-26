@@ -218,3 +218,12 @@ __marimo__/
 
 # Streamlit
 .streamlit/secrets.toml
+
+# My LLM Advisor: PDFs enviados pela tela /upload e banco do Chroma
+# (livros e artigos de terceiros, não versionar)
+documentos/
+.chromadb/
+
+# Demo estático gerado por demo/build_demo.py (o GitHub Action gera de novo)
+demo/dist/
+_site/

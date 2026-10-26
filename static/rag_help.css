@@ -1,0 +1,133 @@
+/* Orientador — layout de chat (thread rolável, composer fixo embaixo).
+   Barra superior, menu lateral e paleta: ver layout.css. */
+.sidebar-top { display: flex; align-items: center; gap: .4rem; }
+.new-conversation-btn { flex: 1 1 auto; min-width: 0; background: #fff; color: var(--accent); border: 1px solid var(--accent);
+                         border-radius: 6px; padding: .55rem .75rem; font-size: .85rem;
+                         font-weight: 600; cursor: pointer; text-align: left;
+                         overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.new-conversation-btn:hover { background: var(--accent); color: #fff; }
+.icon-btn { flex: 0 0 auto; width: 1.5rem; height: 1.5rem; padding: 0; background: transparent;
+            color: var(--accent); border: none; border-radius: 4px; font-size: .8rem; line-height: 1; cursor: pointer;
+            display: flex; align-items: center; justify-content: center; }
+.icon-btn:hover { background: var(--tint); color: var(--accent-dark); }
+.icon-btn:disabled { cursor: not-allowed; opacity: .35; background: transparent; color: var(--accent); }
+.conversations-list { flex: 1 1 auto; overflow-y: auto; display: flex; flex-direction: column; gap: .2rem; }
+.conversations-empty { font-size: .8rem; color: #718096; padding: .5rem .25rem; }
+.conversation-item { display: flex; align-items: center; justify-content: space-between; gap: .35rem;
+                     padding: .5rem .6rem; border-radius: 6px; cursor: pointer; }
+.conversation-item:hover { background: var(--sidebar-hover); }
+.conversation-item.active { background: var(--sidebar-active); }
+.conversation-title { font-size: .85rem; color: #2d3748; overflow: hidden;
+                       text-overflow: ellipsis; white-space: nowrap; }
+.conversation-delete { background: transparent; color: #c53030; border: none; padding: 0 .25rem;
+                       font-size: .95rem; font-weight: 700; line-height: 1; cursor: pointer; visibility: hidden;
+                       appearance: none; -webkit-appearance: none; box-shadow: none; outline: none; }
+.conversation-item:hover .conversation-delete { visibility: visible; }
+.conversation-delete:hover, .conversation-delete:focus, .conversation-delete:active {
+  color: #9b2c2c; background: transparent; box-shadow: none; outline: none;
+}
+
+/* Sidebar travada enquanto uma resposta está sendo renderizada (ver setAsking). */
+.conversations-list.busy .conversation-item:hover { background: transparent; }
+.conversations-list.busy .conversation-item.active { cursor: not-allowed; }
+.conversations-list.busy .conversation-item.active .conversation-delete {
+  cursor: not-allowed; opacity: .35;
+}
+
+/* --- Thread (histórico da conversa) ------------------------------------- */
+.thread { flex: 1 1 auto; overflow-y: auto; padding: 1.5rem 1rem 1rem; }
+.thread-inner { width: 1050px; max-width: 100%; margin: 0 auto; }
+.thread-hint { color: #718096; font-size: .9rem; text-align: center; margin-top: 2.5rem; line-height: 1.6; }
+
+.turn { margin-bottom: 1.75rem; }
+.turn-actions { float: right; margin-bottom: .5rem; }
+/* Nunca no primeiro turno, que define a conversa. */
+.turn:first-child .turn-delete-btn { display: none; }
+.turn-delete-btn { background: transparent; color: #c53030; border: 1px solid #cbd5e0; border-radius: 999px;
+                    padding: .35rem .55rem; font-size: .85rem; font-weight: 700; line-height: 1; cursor: pointer; }
+.turn-delete-btn:hover { background: #fff5f5; color: #9b2c2c; border-color: #feb2b2; }
+.turn-question-block { margin-bottom: 1.25rem; }
+.turn-question-block .section-title { margin-bottom: .35rem; }
+.turn-question-text { color: #2d3748; white-space: pre-wrap; word-break: break-word; }
+
+.keywords-line { display: flex; flex-wrap: wrap; align-items: center; gap: .35rem; margin: 0 0 .75rem; }
+.keywords-label { font-size: .75rem; font-weight: 700; letter-spacing: .05em; color: #718096; }
+.keyword-chip { background: var(--tint); border: 1px solid var(--tint-border); border-radius: 999px;
+                padding: .12rem .55rem; font-size: .8rem; color: var(--accent); }
+
+.answer-header { display: flex; align-items: center; gap: 1rem; margin-bottom: .75rem; }
+.section-title { display: flex; align-items: center; justify-content: flex-start; gap: .75rem;
+                 font-size: .75rem; font-weight: 700; letter-spacing: .05em; color: #718096; }
+.download-btn { background: transparent; color: var(--accent); border: 1px solid #cbd5e0; border-radius: 999px;
+                padding: .35rem .55rem; font-size: 0.92rem; line-height: 1; cursor: pointer; }
+.download-btn:hover { background: var(--tint); color: var(--accent-dark); }
+.timer { font-size: .78rem; font-weight: 600; color: var(--accent); white-space: nowrap; }
+
+/* Some sozinho quando o primeiro pedaço da resposta chega. */
+.loading-indicator { display: flex; gap: .3rem; padding: .25rem 0; }
+.loading-indicator span { width: .5rem; height: .5rem; border-radius: 50%;
+                           background: var(--accent); animation: loading-bounce 1.4s ease-in-out infinite; }
+.loading-indicator span:nth-child(2) { animation-delay: .2s; }
+.loading-indicator span:nth-child(3) { animation-delay: .4s; }
+@keyframes loading-bounce {
+  0%, 80%, 100% { transform: scale(0); opacity: .5; }
+  40% { transform: scale(1); opacity: 1; }
+}
+
+.answer-box { min-height: 1.5rem; white-space: pre-wrap; word-break: break-word;
+              font-size: .95rem; line-height: 1.6; color: #2d3748; }
+.answer-box table { width: 100%; border-collapse: collapse; margin: 1rem 0;
+                     border: 1px solid #cbd5e0; border-radius: 10px; overflow: hidden; }
+.answer-box th, .answer-box td { padding: .75rem 1rem; border: 1px solid #e2e8f0; text-align: left; }
+.answer-box th { background: var(--tint); color: #2d3748; font-weight: 700; }
+.answer-box tr:nth-child(even) td { background: #f8fafc; }
+.answer-box table tbody tr td { background: #ffffff; }
+
+/* --- Composer (pergunta), fixo embaixo da tela -------------------------- */
+.composer { flex: 0 0 auto; background: #fff; border-top: 1px solid var(--line);
+            box-shadow: 0 -2px 10px rgba(28,53,80,.07); padding: 1rem; }
+.composer-inner { width: 1050px; max-width: 100%; margin: 0 auto; }
+.composer textarea {
+  width: 100%; border: 1px solid #cbd5e0; border-radius: 6px;
+  padding: .55rem .75rem; font-size: .95rem; color: #2d3748; background: var(--field-bg);
+  resize: vertical; min-height: 2.6rem; max-height: 40vh; }
+
+.composer-actions { display: flex; flex-wrap: wrap; align-items: center; gap: 1rem; margin-top: .75rem; }
+#cancel-btn { background: #c53030; }
+#cancel-btn:hover { background: #9b2c2c; }
+
+/* Popup de modelo (Ctrl+clique em "Perguntar"). */
+.model-dialog { width: 420px; max-width: calc(100vw - 2rem); margin: auto; border: none;
+                border-radius: 8px; padding: 1.5rem; box-shadow: 0 8px 32px rgba(0,0,0,.25); }
+.model-dialog::backdrop { background: rgba(26,32,44,.45); }
+.model-dialog h2 { font-size: 1.05rem; color: #2d3748; margin-bottom: .25rem; }
+.model-dialog p { font-size: .8rem; color: #718096; margin-bottom: 1rem; }
+.model-dialog select {
+  width: 100%; height: 2.5rem; border: 1px solid #cbd5e0; border-radius: 6px;
+  padding: .5rem .75rem; font-size: .95rem; color: #2d3748; background: var(--field-bg); }
+.model-dialog .row { display: flex; justify-content: flex-end; gap: .75rem; margin-top: 1.25rem; }
+
+/* Combo de documentos, ao lado do botão Perguntar (ver MultiSelect). Painel
+   abre pra cima: pra baixo ficaria cortado pela borda da janela. */
+.msel { position: relative; }
+.msel-btn { height: 2.3rem; max-width: 220px; border: 1px solid #cbd5e0; border-radius: 6px;
+            padding: .4rem .65rem; font-size: .85rem; color: #2d3748; background: var(--field-bg);
+            text-align: left; cursor: pointer; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.msel-btn:hover { background: var(--tint); }
+.msel-btn:disabled { cursor: not-allowed; color: #a0aec0; background: var(--field-bg); }
+.msel-btn::after { content: '\25be'; margin-left: .5rem; color: #718096; }
+.msel-panel { position: absolute; bottom: calc(100% + .35rem); left: 0; z-index: 20; min-width: 220px;
+              background: #fff; border: 1px solid #cbd5e0; border-radius: 6px;
+              box-shadow: 0 4px 12px rgba(0,0,0,.15); max-height: 220px; overflow-y: auto; padding: .35rem 0; }
+.msel-option { display: flex; align-items: center; gap: .5rem; padding: .4rem .75rem;
+               font-size: .85rem; color: #2d3748; cursor: pointer; white-space: nowrap; }
+.msel-option:hover { background: var(--tint); }
+.msel-option input { margin: 0; accent-color: var(--accent); }
+.msel-all { font-weight: 600; border-bottom: 1px solid #e2e8f0; margin-bottom: .2rem; padding-bottom: .5rem; }
+
+.status-row { margin-left: auto; display: flex; align-items: center; gap: .5rem; }
+#status { font-size: .8rem; color: #718096; }
+
+@media (max-width: 640px) {
+  .status-row { margin-left: 0; width: 100%; justify-content: flex-end; }
+}

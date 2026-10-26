@@ -1,0 +1,15 @@
+/* Só no demo estático: aviso na barra superior de que tudo é simulado. */
+.demo-badge { font-size: .8rem; color: #d5e2ef; background: rgba(28,53,80,.92);
+              border: 1px solid rgba(255,255,255,.18); border-radius: 999px; padding: .3rem .8rem; }
+.demo-badge a { color: #fff; font-weight: 600; }
+.demo-badge a:hover { text-decoration: none; }
+
+/* "Usar um PDF de exemplo", embaixo da área de soltar arquivos. */
+.demo-sample { margin-top: .6rem; font-size: .85rem; color: var(--muted); text-align: center; }
+.demo-sample-btn { background: transparent; color: var(--accent); padding: 0; font-size: inherit;
+                   text-decoration: underline; }
+.demo-sample-btn:hover { background: transparent; color: var(--accent-dark); }
+
+@media (max-width: 760px) {
+  .demo-badge { display: none; }
+}

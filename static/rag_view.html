@@ -1,0 +1,79 @@
+<!DOCTYPE html>
+<html lang="pt-br">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>My LLM Advisor - Consulta às bases RAG</title>
+  <link rel="icon" href="/static/favicon.svg" type="image/svg+xml">
+  <link rel="icon" href="/favicon.ico" sizes="any">
+  <link rel="stylesheet" href="/static/rag_view.css">
+  <script>
+    // Os trechos ficam em <pre>, que o MathJax ignora por padrão: sem isso,
+    // as equações indexadas em LaTeX não seriam renderizadas aqui.
+    window.MathJax = {
+      tex: { inlineMath: [['$', '$'], ['\\(', '\\)']], displayMath: [['$$', '$$'], ['\\[', '\\]']] },
+      options: { skipHtmlTags: { '[-]': ['pre'] } }
+    };
+  </script>
+  <script id="MathJax-script" async src="https://cdn.jsdelivr.net/npm/mathjax@3/es5/tex-mml-chtml.js"></script>
+</head>
+<body>
+<header><h1>My LLM Advisor - Consulta às bases RAG</h1></header>
+<main>
+  <div class="card">
+    <div class="form-grid">
+      <div>
+        <label for="collection">Coleção</label>
+        <select id="collection"></select>
+      </div>
+      <div>
+        <label for="filter_key">Metadado</label>
+        <select id="filter_key"></select>
+      </div>
+      <div>
+        <label for="filter_value">Valor</label>
+        <select id="filter_value" disabled></select>
+      </div>
+      <div>
+        <label for="n_results">Nº de resultados</label>
+        <input id="n_results" type="number" min="1" max="50" value="10">
+      </div>
+    </div>
+
+    <div class="question-field">
+      <label for="question">Pergunta</label>
+      <input id="question" type="text" value="">
+      <div id="keywords-line" class="keywords-line" style="display:none"></div>
+    </div>
+
+    <div class="row">
+      <button id="btnRun">Consultar</button>
+      <label class="check-label" title="Consulta a base uma vez por palavra-chave da pergunta e usa como resultado os trechos de menor distância, em vez de buscar pela frase inteira">
+        <input type="checkbox" id="keywords" checked="checked"> Busca por palavras-chave
+      </label>
+      <div class="status-row">
+        <span id="status" class="status"></span>
+        <a href="#" id="download-csv" class="btn-link" download="rag-results.csv" style="display:none">Baixar CSV</a>
+      </div>
+    </div>
+  </div>
+
+  <div class="card">
+    <table id="results-table" style="display:none;">
+      <thead>
+        <tr>
+          <th>#</th>
+          <th>Fonte</th>
+          <th>Página/Linhas</th>
+          <th>Distância</th>
+          <th>Palavra-chave</th>
+          <th>Texto</th>
+        </tr>
+      </thead>
+      <tbody></tbody>
+    </table>
+  </div>
+</main>
+<script type="module" src="/static/js/pages/rag-view.js"></script>
+</body>
+</html>

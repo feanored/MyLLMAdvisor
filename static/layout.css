@@ -1,0 +1,96 @@
+/* Layout comum a todas as telas (templates/base.html): barra superior, menu
+   lateral (conteúdo da tela em cima, navegação no rodapé) e coluna
+   principal. Cada tela soma o seu próprio CSS por cima deste. */
+:root {
+  /* "Tinta e papel": azul de caneta-tinteiro sobre branco-papel frio. */
+  --header-bg: #1c3550;
+  --accent: #2b5b84;
+  --accent-dark: #1f4466;
+  --accent-pale: #a9bfd4;
+  --tint: #e9f0f7;         /* fundos de destaque claros (chips, hover) */
+  --tint-border: #bccfe1;
+  --field-bg: #f8fafc;     /* campos de texto e combos */
+  --page-bg: #f6f7f9;
+  --sidebar-bg: #eef1f5;
+  --sidebar-hover: #e3e9f0;
+  --sidebar-active: #d5e0eb;
+  --line: #dde3ea;
+  --line-soft: #edf1f5;
+  --ink: #1a202c;
+  --ink-soft: #2d3748;
+  --muted: #718096;
+  --danger: #c53030;
+  --danger-dark: #9b2c2c;
+  --shadow: rgba(28,53,80,.10);
+}
+
+* { box-sizing: border-box; margin: 0; padding: 0; }
+html, body { height: 100%; }
+/* O atributo hidden vence qualquer display definido por classe (.upload-actions etc.). */
+[hidden] { display: none !important; }
+/* Campos de formulário herdam a fonte da página (o padrão do textarea é monoespaçada). */
+button, input, select, textarea { font: inherit; }
+body { font-family: system-ui, sans-serif; background: var(--page-bg); color: var(--ink); overflow: hidden; }
+
+.app { display: flex; flex-direction: column; height: 100vh; height: 100dvh; }
+
+.app-header { flex: 0 0 auto; display: flex; align-items: center; justify-content: space-between;
+              color: #fff; padding: 0 2rem;
+              /* Padrão em traço fino de livros e lápis, bem apagado: identidade
+                 sem disputar com o título (SVG original em static/header_pattern.svg). */
+              background:
+                /* o padrão só começa depois do título, pra não atrapalhar a leitura */
+                linear-gradient(90deg, var(--header-bg) 0 240px, rgba(28,53,80,0) 420px),
+                var(--header-bg) url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='112' height='64' viewBox='0 0 112 64'%3E%3Cg fill='none' stroke='white' stroke-opacity='.14' stroke-width='1.3' stroke-linecap='round' stroke-linejoin='round'%3E%3Crect x='8' y='9' width='9' height='15' rx='1'/%3E%3Cpath d='M10.5 9v15'/%3E%3Crect x='19' y='11' width='8' height='13' rx='1' transform='rotate%2814 23 24%29'/%3E%3Cpath d='M46 27l13-13 3 3-13 13z'/%3E%3Cpath d='M46 27l-2 5 5-2'/%3E%3Cpath d='M57 16l3 3'/%3E%3Cpath d='M74 47q7-4 14 0V37q-7-4-14 0z'/%3E%3Cpath d='M88 47q7-4 14 0V37q-7-4-14 0z'/%3E%3Cpath d='M14 46h17l4 2-4 2H14z'/%3E%3Cpath d='M28 46v4'/%3E%3Crect x='46' y='44' width='16' height='5' rx='1'/%3E%3Crect x='48' y='39' width='14' height='5' rx='1'/%3E%3Cpath d='M84 10l3 3M93 6v4'/%3E%3C/g%3E%3C/svg%3E") 0 0 / 112px 64px repeat; }
+/* Serifa só no nome do app: a voz de periódico científico; o resto é sans. */
+.app-title { font-family: Charter, 'Sitka Text', Cambria, Georgia, serif; font-size: 1.35rem; font-weight: 600;
+              letter-spacing: .01em; padding: .9rem 0; color: inherit; text-decoration: none; }
+
+.body-row { flex: 1 1 auto; min-height: 0; display: flex; overflow: hidden; }
+.main-col { flex: 1 1 auto; min-width: 0; display: flex; flex-direction: column; }
+
+.sidebar { flex: 0 0 400px; min-width: 0; background: var(--sidebar-bg); border-right: 1px solid var(--line);
+           display: flex; flex-direction: column; overflow: hidden; }
+.sidebar-content { flex: 1 1 auto; min-height: 0; display: flex; flex-direction: column;
+                   gap: .75rem; padding: 1rem .75rem; overflow: hidden; }
+
+/* Navegação entre telas, sempre no rodapé do menu (NAV_ITEMS em models/config.py). */
+.sidebar-nav { flex: 0 0 auto; display: flex; flex-direction: column; gap: .15rem;
+               padding: .6rem .75rem .8rem; border-top: 1px solid var(--line); }
+.nav-link { display: flex; align-items: center; gap: .6rem; padding: .5rem .6rem; border-radius: 6px;
+            font-size: .88rem; color: var(--ink-soft); text-decoration: none; }
+.nav-link:hover { background: var(--sidebar-hover); }
+.nav-link.active { background: var(--sidebar-active); color: var(--accent-dark); font-weight: 600; }
+.nav-icon { width: 1.15rem; height: 1.15rem; flex: 0 0 auto; color: var(--accent); }
+
+.card { background: #fff; border-radius: 8px; padding: 1.5rem;
+        box-shadow: 0 1px 4px var(--shadow); }
+
+label { display: block; font-size: .85rem; font-weight: 600;
+        color: #4a5568; margin-bottom: .35rem; }
+
+button { background: var(--accent); color: #fff; border: none; border-radius: 6px;
+         padding: .55rem 1.3rem; font-size: .95rem; cursor: pointer; }
+button:hover { background: var(--accent-dark); }
+button:disabled { background: var(--accent-pale); cursor: not-allowed; }
+.btn-secondary { background: transparent; color: #4a5568; border: 1px solid #cbd5e0; }
+.btn-secondary:hover { background: #f7fafc; color: var(--ink-soft); }
+
+.btn-link { background: transparent; color: var(--accent); font-size: .8rem; white-space: nowrap; }
+.btn-link:hover { color: var(--accent-dark); text-decoration: underline; }
+
+:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
+
+/* Esconde da tela, mas mantém acessível ao teclado e ao leitor de tela. */
+.visually-hidden { position: absolute; width: 1px; height: 1px; overflow: hidden;
+                   clip: rect(0 0 0 0); clip-path: inset(50%); white-space: nowrap; }
+
+@media (max-width: 640px) {
+  .app-title { font-size: 1rem; }
+  .sidebar { flex-basis: 180px; }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  *, *::before, *::after { animation-duration: .01ms !important; animation-iteration-count: 1 !important;
+                           transition-duration: .01ms !important; }
+}

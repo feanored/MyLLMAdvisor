@@ -1,0 +1,67 @@
+{% extends "base.html" %}
+
+{% block title %}Enviar PDFs - My LLM Advisor{% endblock %}
+
+{% block head %}
+<link rel="stylesheet" href="/static/upload.css">
+{% endblock %}
+
+{% block sidebar %}
+<div class="sidebar-heading">
+  <h2>Na base</h2>
+  <span id="documents-count" class="documents-count"></span>
+</div>
+<ul class="documents-list" id="documents-list">
+  <li class="documents-empty">Carregando…</li>
+</ul>
+{% endblock %}
+
+{% block content %}
+<div class="upload-page">
+  <div class="upload-inner">
+    <h1 class="page-title">Enviar PDFs</h1>
+    <p class="page-lede">
+      Os artigos e livros enviados aqui são indexados na base e passam a ser
+      consultados pelo Orientador. Cada PDF leva alguns minutos: o texto é
+      dividido em trechos, as equações viram LaTeX e as figuras ganham uma descrição.
+    </p>
+
+    <label class="dropzone" id="dropzone">
+      <input type="file" id="file-input" class="visually-hidden" accept="application/pdf,.pdf" multiple>
+      <svg class="dropzone-icon" viewBox="0 0 48 60" aria-hidden="true">
+        <path d="M4 2h28l14 14v40a2 2 0 0 1-2 2H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2z" fill="#fff" stroke="currentColor" stroke-width="2.5"/>
+        <path d="M32 2v14h14" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linejoin="round"/>
+        <path d="M11 34h26M11 41h26M11 48h17" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" opacity=".45"/>
+      </svg>
+      <span class="dropzone-title">Arraste os PDFs para cá</span>
+      <span class="dropzone-hint">ou clique para escolher no computador. Até {{ max_mb }} MB por envio.</span>
+    </label>
+
+    <ul class="selected-list" id="selected-list" hidden></ul>
+
+    <div class="upload-actions" id="upload-actions" hidden>
+      <button type="button" id="send-btn">Enviar e indexar</button>
+      <button type="button" id="clear-btn" class="btn-secondary">Limpar</button>
+      <div class="upload-progress" id="upload-progress" hidden>
+        <div class="upload-progress-bar"><span id="upload-progress-fill"></span></div>
+        <span id="upload-progress-text"></span>
+      </div>
+    </div>
+    <p class="upload-status" id="upload-status" role="status"></p>
+
+    <section class="jobs" aria-labelledby="jobs-title">
+      <h2 id="jobs-title">Indexação</h2>
+      <ul class="jobs-list" id="jobs-list">
+        <li class="jobs-empty">
+          Nenhum envio desde que o servidor foi iniciado. Os PDFs enviados
+          aparecem aqui, com o andamento da indexação de cada um.
+        </li>
+      </ul>
+    </section>
+  </div>
+</div>
+{% endblock %}
+
+{% block body_end %}
+<script type="module" src="/static/js/pages/upload.js"></script>
+{% endblock %}

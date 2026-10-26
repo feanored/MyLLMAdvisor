@@ -77,7 +77,7 @@ static/
     │                # timer.js (cronômetros), text.js (escape/imagens locais), download.js (arquivo para baixar)
     ├── components/  # widgets reutilizáveis: select.js, keywords.js, multiselect.js (combo de
     │                # documentos do Orientador), answer.js (markdown/fórmulas/figuras/equações
-    │                # da resposta), answer-export.js (HTML da resposta)
+    │                # da resposta), answer-export.js (HTML da resposta), sidebar.js (menu em tela estreita)
     └── pages/       # controladores: rag-help.js (Orientador), upload.js (Enviar PDFs),
                      # rag-view.js (consulta bruta)
 ```
@@ -98,6 +98,15 @@ nova:
 3. uma entrada `{"endpoint": "nome_da_funcao", "label": "...", "icon": "..."}`
    em `NAV_ITEMS`, se ela deve aparecer no menu (telas de administração,
    como o `/rag-view`, ficam de fora).
+
+**Telas menores.** Até 1100 px de largura o menu lateral só fica mais
+estreito (300 px). Até 760 px (celular em retrato, ou paisagem estreita) ele
+vira um trilho fino com o botão ☰ em cima e os ícones das telas embaixo; o ☰
+abre o menu inteiro como gaveta por cima do conteúdo, que fecha tocando fora,
+com Esc, ou ao escolher uma tela, uma conversa ou "Nova conversa"
+(`static/js/components/sidebar.js`; numa tela nova, marque com
+`data-close-sidebar` o que deve fechar a gaveta ao ser clicado). Equações
+destacadas mais largas que a tela rolam na horizontal sem empurrar a página.
 
 Cores, botões e o foco de teclado vêm de `static/layout.css` (variáveis
 `--accent`, `--header-bg`, `--sidebar-bg` etc.), então uma tela nova já nasce

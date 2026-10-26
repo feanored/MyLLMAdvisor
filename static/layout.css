@@ -85,9 +85,54 @@ button:disabled { background: var(--accent-pale); cursor: not-allowed; }
 .visually-hidden { position: absolute; width: 1px; height: 1px; overflow: hidden;
                    clip: rect(0 0 0 0); clip-path: inset(50%); white-space: nowrap; }
 
-@media (max-width: 640px) {
-  .app-title { font-size: 1rem; }
-  .sidebar { flex-basis: 180px; }
+/* --- Telas menores ----------------------------------------------------------------
+   Só em tela estreita existem o botão do menu e o fundo escurecido da gaveta. */
+.sidebar-toggle, .sidebar-backdrop { display: none; }
+
+/* Notebook pequeno / tablet: o menu só fica mais estreito. */
+@media (max-width: 1100px) {
+  .sidebar { flex-basis: 300px; }
+}
+
+/* Celular (retrato, ou paisagem estreita): o menu vira um trilho fino só com
+   ícones, e o botão do topo o abre como gaveta por cima do conteúdo. O
+   limite (760px) é o mesmo de COMPACT_QUERY em static/js/components/sidebar.js. */
+@media (max-width: 760px) {
+  .app-header { padding: 0 1rem; }
+  .app-title { font-size: 1.1rem; }
+  .card { padding: 1rem; }
+
+  .sidebar { flex: 0 0 52px; }
+  .sidebar-toggle { display: flex; align-items: center; justify-content: center; flex: 0 0 auto;
+                    width: 2.5rem; height: 2.5rem; margin: .6rem auto 0; padding: 0;
+                    background: transparent; color: var(--accent); border-radius: 8px; }
+  .sidebar-toggle:hover { background: var(--sidebar-hover); }
+  .sidebar-toggle svg { width: 1.35rem; height: 1.35rem; }
+  .sidebar-toggle .icon-close { display: none; }
+
+  /* Trilho (fechado): só o botão em cima e os ícones das telas embaixo. */
+  .app:not(.sidebar-open) .sidebar-content { display: none; }
+  .app:not(.sidebar-open) .sidebar-nav { margin-top: auto; padding: .5rem .35rem; align-items: center; }
+  .app:not(.sidebar-open) .nav-link { justify-content: center; padding: .6rem; }
+  .app:not(.sidebar-open) .nav-label { position: absolute; width: 1px; height: 1px; overflow: hidden;
+                                       clip-path: inset(50%); white-space: nowrap; }
+
+  /* Gaveta (aberta): o menu inteiro por cima do conteúdo; o trilho continua
+     ocupando o lugar dele, pra coluna principal não pular. */
+  .app.sidebar-open .sidebar { position: fixed; z-index: 40; top: 0; bottom: 0; left: 0;
+                               width: min(340px, 86vw); box-shadow: 4px 0 24px rgba(0,0,0,.22);
+                               animation: sidebar-in .18s ease-out; }
+  .app.sidebar-open .main-col { margin-left: 52px; }
+  .app.sidebar-open .sidebar-toggle { margin: .6rem .6rem 0 auto; }
+  .app.sidebar-open .sidebar-toggle .icon-open { display: none; }
+  .app.sidebar-open .sidebar-toggle .icon-close { display: block; }
+  .app.sidebar-open .sidebar-content { padding-top: .25rem; }
+  .app.sidebar-open .sidebar-backdrop { display: block; position: fixed; inset: 0; z-index: 35;
+                                        background: rgba(26,32,44,.45); }
+}
+
+@keyframes sidebar-in {
+  from { transform: translateX(-100%); }
 }
 
 @media (prefers-reduced-motion: reduce) {

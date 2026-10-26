@@ -37,26 +37,37 @@
   </header>
 
   <div class="body-row">
-    <aside class="sidebar">
+    <aside class="sidebar" id="sidebar">
+      {# Só aparece em tela estreita, onde o menu vira um trilho de ícones
+         (ver layout.css e static/js/components/sidebar.js). #}
+      <button type="button" class="sidebar-toggle" id="sidebar-toggle"
+              aria-controls="sidebar" aria-expanded="false" aria-label="Abrir menu" title="Abrir menu">
+        <svg class="icon-open" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"
+             stroke-linecap="round" aria-hidden="true"><path d="M4 7h16M4 12h16M4 17h16"/></svg>
+        <svg class="icon-close" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"
+             stroke-linecap="round" aria-hidden="true"><path d="M6 6l12 12M18 6 6 18"/></svg>
+      </button>
       <div class="sidebar-content">
         {% block sidebar %}{% endblock %}
       </div>
       <nav class="sidebar-nav" aria-label="Telas">
         {% for item in nav_items %}
-        <a href="{{ url_for(item.endpoint) }}"
+        <a href="{{ url_for(item.endpoint) }}" title="{{ item.label }}"
            class="nav-link{% if item.endpoint == active %} active{% endif %}"
            {% if item.endpoint == active %}aria-current="page"{% endif %}>
-          {{ nav_icon(item.icon) }}{{ item.label }}
+          {{ nav_icon(item.icon) }}<span class="nav-label">{{ item.label }}</span>
         </a>
         {% endfor %}
       </nav>
     </aside>
+    <div class="sidebar-backdrop" id="sidebar-backdrop"></div>
 
     <main class="main-col">
       {% block content %}{% endblock %}
     </main>
   </div>
 </div>
+<script type="module" src="/static/js/components/sidebar.js"></script>
 {% block body_end %}{% endblock %}
 </body>
 </html>

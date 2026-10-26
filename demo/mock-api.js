@@ -273,7 +273,11 @@ Na prática, isso troca uma integral para cada ponto de saída, de custo $O(N^2)
   // --- Página ---------------------------------------------------------------------------------
 
   document.addEventListener('DOMContentLoaded', () => {
-    const auto = new URLSearchParams(location.search).has('auto');
+    const params = new URLSearchParams(location.search);
+    const auto = params.has('auto');
+
+    // ?menu=1: abre a gaveta do menu (tela estreita) — usado nos screenshots.
+    if (params.has('menu')) setTimeout(() => document.getElementById('sidebar-toggle')?.click(), 400);
 
     // Orientador: já vem com uma pergunta de exemplo; ?auto=1 a envia sozinha.
     const question = document.getElementById('question');

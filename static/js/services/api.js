@@ -1,6 +1,11 @@
 // Service: todas as chamadas HTTP do front-end aos endpoints de rag_web.py.
 // As páginas nunca montam URL nem fazem fetch direto — só chamam Api.*.
 
+async function postJson(url, body) {
+  const response = await post(url, body);
+  return response.json();
+}
+
 async function getJson(url, params) {
   const query = params ? `?${new URLSearchParams(params)}` : '';
   const response = await fetch(url + query);
@@ -44,5 +49,6 @@ export const Api = {
     xhr.send(form);
   }),
   uploadJobs: () => getJson('/upload/jobs'),
-  documents: () => getJson('/documents')
+  documents: () => getJson('/documents'),
+  deleteDocument: source => postJson('/documents/delete', { source })
 };

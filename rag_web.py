@@ -149,6 +149,16 @@ def documents():
     return jsonify(_indexed_documents())
 
 
+@app.route("/documents/delete", methods=["POST"])
+def documents_delete():
+    """Exclui um PDF da base (ver IndexingService.remove_document)."""
+    payload = request.get_json(silent=True) or {}
+    removed, error = IndexingService.remove_document(payload.get("source"))
+    if error:
+        return jsonify({"ok": False, "error": error}), 409
+    return jsonify({"ok": True, "removed": removed})
+
+
 @app.errorhandler(413)
 def too_large(_error):
     return jsonify({"ok": False, "error": f"Envio maior que o limite de {UPLOAD_MAX_MB} MB. "

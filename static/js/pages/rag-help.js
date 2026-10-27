@@ -12,6 +12,7 @@ import { downloadAnswer } from '../components/answer-export.js';
 import { renderKeywords } from '../components/keywords.js';
 import { appendOptions } from '../components/select.js';
 import { MultiSelect } from '../components/multiselect.js';
+import { confirmDelete } from '../components/confirm-dialog.js';
 
 const HELP_COLLECTION = 'rag_documentos';
 const FILTER_KEY = 'source';
@@ -241,6 +242,17 @@ function deleteConversation(id) {
   else renderConversationsList();
 }
 
+async function confirmDeleteConversation(id) {
+  if (current.abortController && id === conversationId) return;  // ver deleteConversation
+  const entry = loadIndex().find(c => c.id === id);
+  const ok = await confirmDelete({
+    title: 'Excluir conversa?',
+    detail: entry?.title || '',
+    message: 'Todas as perguntas e respostas desta conversa são apagadas deste navegador. Não dá para desfazer.'
+  });
+  if (ok) deleteConversation(id);
+}
+
 function renderConversationsList() {
   const list = loadIndex();
   els.exportBtn.disabled = current.abortController ? true : !list.length;
@@ -420,9 +432,15 @@ function wireDownloadButton(turnRoot) {
 function wireDeleteButton(turnRoot, ownerConversationId) {
   const deleteBtn = turnRoot.querySelector('.turn-delete-btn');
   if (!deleteBtn) return;
-  deleteBtn.addEventListener('click', () => {
+  deleteBtn.addEventListener('click', async () => {
     const turnId = turnRoot.dataset.turnId;
     const question = turnRoot.querySelector('.turn-question-text')?.textContent || '';
+    const ok = await confirmDelete({
+      title: 'Excluir esta resposta?',
+      detail: question,
+      message: 'A pergunta e a resposta saem da conversa, e o chat deixa de lembrar delas nas próximas perguntas.'
+    });
+    if (!ok || !turnRoot.isConnected) return;
     deletedTurnIds.add(turnId);
     turnRoot.remove();
     removeTurn(ownerConversationId, turnId);
@@ -624,7 +642,7 @@ els.importInput.addEventListener('change', async () => {
 els.conversationsList.addEventListener('click', e => {
   const delBtn = e.target.closest('.conversation-delete');
   if (delBtn) {
-    deleteConversation(delBtn.dataset.id);
+    confirmDeleteConversation(delBtn.dataset.id);
     return;
   }
   const item = e.target.closest('.conversation-item');

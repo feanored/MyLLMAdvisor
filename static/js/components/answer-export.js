@@ -75,6 +75,12 @@ export function downloadAnswer({ answerBox, question, keywords, model, collectio
     body { font-family: system-ui, sans-serif; line-height: 1.6; color: #2d3748; padding: 24px; }
     h2, h3 { margin-top: 1rem; }
     pre { white-space: pre-wrap; background: #f7fafc; padding: 12px; border-radius: 6px; overflow: auto; }
+    hr { margin: 1rem 0; }
+    table { width: 100%; border-collapse: collapse; margin: 1rem 0; border: 1px solid #cbd5e0; border-radius: 10px; overflow: hidden; }
+    th, td { padding: 0.75rem 1rem; border: 1px solid #e2e8f0; text-align: left; }
+    th { background: #f7fafc; color: #2d3748; font-weight: 700; }
+    tr:nth-child(even) td { background: #f8fafc; }
+    table tbody tr td { background: #ffffff; }
     /* Mesmas regras da tela (rag_help.css): nada alarga a página, o que é largo rola. */
     body { overflow-wrap: break-word; }
     mjx-container[display="true"] { max-width: 100%; overflow-x: auto; overflow-y: hidden; }
@@ -86,12 +92,6 @@ export function downloadAnswer({ answerBox, question, keywords, model, collectio
       table { display: block; overflow-x: auto; overflow-y: hidden; width: auto; max-width: 100%; }
       th, td { min-width: 7rem; }
     }
-    hr { margin: 1rem 0; }
-    table { width: 100%; border-collapse: collapse; margin: 1rem 0; border: 1px solid #cbd5e0; border-radius: 10px; overflow: hidden; }
-    th, td { padding: 0.75rem 1rem; border: 1px solid #e2e8f0; text-align: left; }
-    th { background: #f7fafc; color: #2d3748; font-weight: 700; }
-    tr:nth-child(even) td { background: #f8fafc; }
-    table tbody tr td { background: #ffffff; }
     .keywords { font-size: .8rem; color: #718096; margin-top: .35rem; }
   </style>
 </head>

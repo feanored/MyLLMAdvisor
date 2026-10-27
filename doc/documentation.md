@@ -334,7 +334,10 @@ limitação: essa memória real do backend some num restart do servidor, mesmo
 com os turnos antigos ainda visíveis na tela). Cada bloco de resposta, menos
 o primeiro (que define a conversa), tem um "✕" para excluir só aquele
 turno, sem apagar a conversa inteira; a conversa inteira também pode ser
-excluída pelo "×" ao lado do título dela na barra lateral. Enquanto uma
+excluída pelo "×" ao lado do título dela na barra lateral. As duas
+exclusões pedem confirmação num modal (Cancelar/Excluir, foco em Cancelar;
+Esc ou clique fora cancelam — `static/js/components/confirm-dialog.js`,
+o mesmo da exclusão de documentos em `/upload`). Enquanto uma
 resposta está sendo renderizada, a barra lateral trava: não dá pra
 selecionar outra conversa, excluir a conversa ativa, nem clicar em "Nova
 conversa"/Exportar/Importar — evita perder ou corromper o turno em
@@ -492,6 +495,16 @@ lateral).
 - **Reenvio**: o mesmo PDF sem alterações (mesmo nome e mesmo hash) é
   detectado e não é reindexado ("Já estava na base"); com o mesmo nome e
   conteúdo diferente, a versão nova substitui a antiga, na pasta e na base.
+  Para reindexar um PDF que não mudou, exclua-o da base (abaixo) e envie de novo.
+- **Excluir da base**: cada PDF da lista "Na base" (menu lateral) tem uma
+  lixeira (visível ao passar o mouse; sempre visível em tela de toque) que,
+  depois de confirmada num modal, tira da base todos os trechos dele (texto,
+  figuras e equações) e apaga as imagens das figuras
+  (`IndexingService.remove_document`). O arquivo em `UPLOAD_DIR` não é
+  apagado. Enquanto houver algum PDF na fila ou indexando (ou um envio
+  subindo), todas as lixeiras ficam desativadas e o servidor recusa a
+  exclusão: indexação e exclusão nunca gravam na collection ao mesmo tempo
+  (`_write_lock`), porque a exclusão no meio de uma indexação falhava.
 - **Criação da base**: a collection `rag_documentos` só é criada pelo
   indexador (no primeiro envio), sempre com a embedding `bge-m3`; as telas só
   a abrem (`ChromaCollectionFactory.open` nunca cria). Se ela já existir com
@@ -559,6 +572,7 @@ Setando `DEBUG = True` em `models/config.py` (padrão), cada pergunta feita impr
 - `/upload` (POST) — recebe os PDFs (campo `files`, vários) e os põe na fila de indexação; devolve os jobs criados e os rejeitados, com o motivo.
 - `/upload/jobs` — estado de cada envio desde que o servidor subiu (mais recente primeiro).
 - `/documents` — nomes dos PDFs indexados em `rag_documentos`.
+- `/documents/delete` (POST) — exclui um PDF da base (`source`): trechos e imagens das figuras; recusado (409) com indexação em andamento.
 - `/help-groups` — os documentos selecionáveis no combo do Orientador (rótulo + arquivo(s) de cada um): `HELP_DOC_GROUPS`, se preenchido, ou um item por PDF indexado em `rag_documentos`.
 - `/rag-view` — consulta bruta.
 - `/collections` — lista as collections do ChromaDB.

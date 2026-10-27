@@ -23,7 +23,8 @@ reais, com respostas e indexação simuladas no navegador.
 - **Figuras** — extraídas dos PDFs e descritas por um modelo de visão, entram
   na busca e aparecem na resposta quando citadas.
 - **Enviar PDFs** — upload pelo navegador, com a indexação de cada arquivo
-  acompanhada etapa por etapa.
+  acompanhada etapa por etapa, e exclusão de um PDF da base (para reindexá-lo)
+  com confirmação.
 - **Busca por palavras-chave e frase inteira** juntas, para o contexto não ser
   dominado por um termo genérico da pergunta.
 - **Responsivo** — no celular, o menu lateral vira um trilho de ícones.

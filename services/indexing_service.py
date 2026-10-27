@@ -37,6 +37,10 @@ def _safe_filename(name):
 
 class IndexingService:
     _lock = threading.Lock()
+    # Uma escrita na collection por vez: indexação de um PDF (worker) ou
+    # exclusão de um documento. Excluir no meio de uma indexação falhava
+    # (as duas mexem nos trechos e no cache de metadados ao mesmo tempo).
+    _write_lock = threading.Lock()
     _jobs = {}            # job_id -> estado do envio (ver _new_job)
     _order = []           # job_ids, do mais recente pro mais antigo
     _queue = queue.Queue()
@@ -84,6 +88,52 @@ class IndexingService:
     def list_jobs(cls):
         with cls._lock:
             return [cls._public(cls._jobs[job_id]) for job_id in cls._order]
+
+    # --- exclusão ---------------------------------------------------------------
+
+    @classmethod
+    def remove_document(cls, source):
+        """Tira da base todos os trechos do PDF `source` (texto, figuras e
+        equações) e apaga as imagens das figuras dele — o caminho pra
+        reindexar um PDF que já está na base com o mesmo conteúdo (o envio
+        dele seria pulado, ver is_indexed). O arquivo em UPLOAD_DIR fica.
+        Devolve (nº de trechos removidos, erro)."""
+        source = (source or "").strip()
+        if not source:
+            return 0, "Informe o documento."
+        if cls.indexing_in_progress() or not cls._write_lock.acquire(blocking=False):
+            return 0, "Há uma indexação em andamento: espere terminar para excluir documentos."
+        try:
+            return cls._remove_document(source)
+        finally:
+            cls._write_lock.release()
+
+    @classmethod
+    def indexing_in_progress(cls):
+        """Se algum PDF está na fila ou sendo indexado agora."""
+        with cls._lock:
+            return any(j["status"] in _PENDING for j in cls._jobs.values())
+
+    @classmethod
+    def _remove_document(cls, source):
+        import rag_papers
+        col = cls._collection()
+        got = col.get(where={"source": source}, include=["metadatas"])
+        ids = got.get("ids") or []
+        if not ids:
+            return 0, "Esse documento não está na base."
+        figures = {m.get("figure_path") for m in got.get("metadatas") or [] if m and m.get("figure_path")}
+
+        col.delete(where={"source": source})
+        refresh_filter_fields_cache(col)
+
+        # Só imagens dentro da pasta de figuras do indexador, nunca um caminho qualquer vindo da base.
+        root = rag_papers.FIGURES_DIR.resolve()
+        for path in figures:
+            target = Path(path).resolve()
+            if target.parent == root:
+                target.unlink(missing_ok=True)
+        return len(ids), None
 
     # --- estado dos jobs --------------------------------------------------------
 
@@ -140,10 +190,13 @@ class IndexingService:
                 cls._update(job_id, message=message)
 
             cls._update(job_id, status="running", started=time.time(), message="Preparando a indexação")
+            cls._write_lock.acquire()  # espera uma exclusão que já tenha começado
             try:
                 col = cls._collection()
                 if rag_papers.is_indexed(col, path):
-                    cls._update(job_id, status="skipped", message="Esse PDF já está na base, sem alterações.")
+                    cls._update(job_id, status="skipped",
+                                message="Esse PDF já está na base, sem alterações. Para reindexá-lo, "
+                                        "exclua-o da lista ao lado e envie de novo.")
                     continue
                 if cls._pipeline is None:
                     log("Carregando o Docling e os modelos (só no primeiro envio)")
@@ -159,4 +212,5 @@ class IndexingService:
                                "Suba-o com: chroma run --path ./.chromadb --port 8000")
                 cls._update(job_id, status="error", message=message)
             finally:
+                cls._write_lock.release()
                 cls._update(job_id, finished=time.time())

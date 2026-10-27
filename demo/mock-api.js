@@ -2,7 +2,7 @@
 // simuladas no próprio navegador. Carregado ANTES dos módulos da página
 // (script clássico no <head>, ver build_demo.py) e só no demo — o app de
 // verdade nunca carrega este arquivo. Intercepta:
-//   fetch: /models, /help-groups, /documents, /upload/jobs, /ask (stream SSE
+//   fetch: /models, /help-groups, /documents, /documents/delete, /upload/jobs, /ask (stream SSE
 //          no mesmo formato de _format_sse_event em rag_web.py), /ask/cancel,
 //          /ask/forget-turn
 //   XMLHttpRequest: POST /upload (progresso do envio + fila de indexação)
@@ -71,7 +71,8 @@ Na prática, isso troca uma integral para cada ponto de saída, de custo $O(N^2)
 
   // Rota da API a partir da URL (o app usa caminhos absolutos, "/ask"; no
   // GitHub Pages eles apontam pra raiz do domínio, então vale o fim do caminho).
-  const ROUTES = ['upload/jobs', 'ask/cancel', 'ask/forget-turn', 'help-groups', 'documents', 'models', 'upload', 'ask'];
+  const ROUTES = ['upload/jobs', 'ask/cancel', 'ask/forget-turn', 'help-groups', 'documents/delete', 'documents',
+                  'models', 'upload', 'ask'];
   function routeOf(input) {
     const raw = typeof input === 'string' ? input : (input && input.url) || '';
     const path = new URL(raw, location.href).pathname.replace(/\/+$/, '');
@@ -185,7 +186,10 @@ Na prática, isso troca uma integral para cada ponto de saída, de custo $O(N^2)
   function jobState(job, now = Date.now()) {
     if (now < job.start) return { status: 'queued', message: 'Na fila' };
     if (now >= job.end) {
-      if (job.already) return { status: 'skipped', message: 'Esse PDF já está na base, sem alterações.' };
+      if (job.already) {
+        return { status: 'skipped', message: 'Esse PDF já está na base, sem alterações. Para reindexá-lo, ' +
+                                             'exclua-o da lista ao lado e envie de novo.' };
+      }
       if (!job.counted) {  // entrou na base: aparece no menu lateral e no Orientador
         job.counted = true;
         if (!documents.includes(job.file)) documents.push(job.file);
@@ -228,6 +232,16 @@ Na prática, isso troca uma integral para cada ponto de saída, de custo $O(N^2)
       case 'documents':
         jobs.forEach(job => jobState(job));
         return json([...documents]);
+      case 'documents/delete': {
+        // Mesmas regras do IndexingService.remove_document.
+        if (jobs.some(job => jobState(job).status in { queued: 1, running: 1 })) {
+          return json({ ok: false, error: 'Há uma indexação em andamento: espere terminar para excluir documentos.' });
+        }
+        const index = documents.indexOf(body.source);
+        if (index < 0) return json({ ok: false, error: 'Esse documento não está na base.' });
+        documents.splice(index, 1);
+        return json({ ok: true, removed: 60 + Math.floor(Math.random() * 120) });
+      }
       case 'upload/jobs': return json(jobs.map(publicJob));
       case 'ask/cancel':
       case 'ask/forget-turn': return json({ ok: true });

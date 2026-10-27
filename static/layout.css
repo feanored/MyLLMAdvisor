@@ -81,6 +81,27 @@ button:disabled { background: var(--accent-pale); cursor: not-allowed; }
 
 :focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
 
+/* Confirmação modal das exclusões (static/js/components/confirm-dialog.js). */
+.btn-danger { background: var(--danger); }
+.btn-danger:hover { background: var(--danger-dark); }
+.confirm-dialog { width: 420px; max-width: calc(100vw - 2rem); margin: auto; border: none;
+                  border-radius: 10px; padding: 1.5rem; box-shadow: 0 8px 32px rgba(0,0,0,.25); }
+.confirm-dialog::backdrop { background: rgba(26,32,44,.45); }
+.confirm-dialog[open] { animation: confirm-in .14s ease-out; }
+.confirm-dialog-head { display: flex; align-items: center; gap: .65rem; margin-bottom: .75rem; }
+.confirm-dialog-icon { flex: 0 0 auto; width: 2.25rem; height: 2.25rem; padding: .45rem; border-radius: 50%;
+                       background: #fff5f5; color: var(--danger); }
+.confirm-dialog h2 { font-size: 1.05rem; font-weight: 600; color: var(--ink-soft); }
+.confirm-dialog-message { font-size: .88rem; line-height: 1.55; color: #4a5568; }
+.confirm-dialog-detail { display: block; margin-bottom: .5rem; padding: .45rem .65rem; border-radius: 6px;
+                         background: var(--field-bg); border: 1px solid var(--line); color: var(--ink-soft);
+                         font-weight: 600; overflow-wrap: anywhere;
+                         max-height: 6.5rem; overflow-y: auto; }
+.confirm-dialog .row { display: flex; justify-content: flex-end; gap: .75rem; margin-top: 1.25rem; }
+@keyframes confirm-in {
+  from { opacity: 0; transform: translateY(6px) scale(.98); }
+}
+
 /* Esconde da tela, mas mantém acessível ao teclado e ao leitor de tela. */
 .visually-hidden { position: absolute; width: 1px; height: 1px; overflow: hidden;
                    clip: rect(0 0 0 0); clip-path: inset(50%); white-space: nowrap; }

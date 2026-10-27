@@ -3,6 +3,7 @@
 // em /upload/jobs (ver IndexingService no backend).
 import { Api } from '../services/api.js';
 import { escapeHtml } from '../services/text.js';
+import { confirmDelete } from '../components/confirm-dialog.js';
 
 const byId = id => document.getElementById(id);
 // Pra valores dentro de atributos: escapeHtml não escapa aspas, e o nome
@@ -42,6 +43,10 @@ let uploading = false;
 let pollTimer = null;
 let lastStatuses = new Map();  // job id -> status, pra saber quando um termina
 let freshDocuments = new Set();
+// Algum PDF na fila ou indexando: a exclusão de documentos fica bloqueada
+// até terminar (o servidor também recusa, ver IndexingService.remove_document).
+let indexing = false;
+let documentNames = [];
 
 // --- Arquivos escolhidos ---------------------------------------------------------
 
@@ -97,6 +102,7 @@ async function send() {
   if (!files.length || uploading) return;
   uploading = true;
   renderSelected();
+  renderDocuments();
   setStatus('');
   showProgress(0);
 
@@ -120,6 +126,7 @@ async function send() {
     uploading = false;
     els.progress.hidden = true;
     renderSelected();
+    renderDocuments();
   }
 }
 
@@ -162,24 +169,84 @@ async function refreshJobs() {
     loadDocuments();
   }
   lastStatuses = new Map(jobs.map(job => [job.id, job.status]));
+  const nowIndexing = jobs.some(job => PENDING.has(job.status));
+  if (nowIndexing !== indexing) {
+    indexing = nowIndexing;
+    renderDocuments();
+  }
 
-  if (jobs.some(job => PENDING.has(job.status))) pollTimer = setTimeout(refreshJobs, POLL_MS);
+  if (indexing) pollTimer = setTimeout(refreshJobs, POLL_MS);
 }
 
 // --- Documentos na base (menu lateral) --------------------------------------------------
 
+const TRASH_ICON = `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"
+  stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+  <path d="M4 7h16M9 7V4h6v3M6 7l1 13h10l1-13M10 11v6M14 11v6"/></svg>`;
+
 async function loadDocuments() {
-  let names = [];
   try {
-    names = await Api.documents();
+    documentNames = await Api.documents();
   } catch (e) {
     els.documentsList.innerHTML = '<li class="documents-empty">Não foi possível ler a base. O servidor do Chroma está no ar?</li>';
     return;
   }
+  renderDocuments();
+}
+
+// Enquanto um envio sobe ou uma indexação roda, nenhum documento pode ser excluído.
+const deleteLocked = () => indexing || uploading;
+
+function renderDocuments() {
+  const names = documentNames;
+  const locked = deleteLocked();
+  const label = name => (locked
+    ? 'Indexação em andamento: espere terminar para excluir'
+    : `Excluir ${attr(name)} da base`);
   els.documentsCount.textContent = names.length ? `${names.length} PDF(s)` : '';
   els.documentsList.innerHTML = names.length
-    ? names.map(name => `<li class="${freshDocuments.has(name) ? 'fresh' : ''}" title="${attr(name)}">${escapeHtml(name)}</li>`).join('')
+    ? names.map(name => {
+      return `
+      <li class="${freshDocuments.has(name) ? 'fresh' : ''}">
+        <span class="document-name" title="${attr(name)}">${escapeHtml(name)}</span>
+        <button type="button" class="document-delete" data-name="${attr(name)}"
+                title="${label(name)}" aria-label="${label(name)}"${locked ? ' disabled' : ''}>${TRASH_ICON}</button>
+      </li>`;
+    }).join('')
     : '<li class="documents-empty">Nenhum documento indexado ainda. Envie o primeiro PDF ao lado.</li>';
+}
+
+// Excluir da base é o caminho pra reindexar um PDF que não mudou: reenviado
+// sem excluir, ele é pulado ("Já estava na base").
+async function deleteDocument(btn) {
+  const name = btn.dataset.name;
+  const ok = await confirmDelete({
+    title: 'Excluir documento da base?',
+    detail: name,
+    message: 'Os trechos, figuras e equações dele deixam de ser consultados pelo Orientador. ' +
+             'O arquivo PDF não é apagado; para reindexá-lo, envie-o de novo depois.'
+  });
+  if (!ok) return;
+  // Uma indexação pode ter começado com o modal aberto.
+  if (deleteLocked()) {
+    setStatus('Há uma indexação em andamento: espere terminar para excluir documentos.', true);
+    return;
+  }
+  btn.disabled = true;
+  try {
+    const data = await Api.deleteDocument(name);
+    if (!data.ok) {
+      setStatus(data.error || 'Não foi possível excluir o documento.', true);
+      btn.disabled = false;
+      return;
+    }
+    freshDocuments.delete(name);
+    setStatus(`"${name}" excluído da base (${data.removed} trechos). Envie o PDF de novo para reindexá-lo.`);
+    await loadDocuments();
+  } catch (e) {
+    setStatus('Falha na conexão com o servidor.', true);
+    btn.disabled = false;
+  }
 }
 
 // --- Inicialização ----------------------------------------------------------------------
@@ -210,6 +277,10 @@ els.selectedList.addEventListener('click', e => {
   if (!btn) return;
   selected.delete(btn.dataset.name);
   renderSelected();
+});
+els.documentsList.addEventListener('click', e => {
+  const btn = e.target.closest('.document-delete');
+  if (btn && !btn.disabled) deleteDocument(btn);
 });
 els.sendBtn.addEventListener('click', send);
 els.clearBtn.addEventListener('click', () => {

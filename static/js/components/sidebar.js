@@ -24,7 +24,9 @@ function setOpen(open) {
 toggle.addEventListener('click', () => setOpen(!isOpen()));
 backdrop.addEventListener('click', () => setOpen(false));
 document.addEventListener('keydown', e => {
-  if (e.key === 'Escape' && isOpen()) setOpen(false);
+  // Com um modal aberto por cima da gaveta (ex.: confirmação de exclusão),
+  // o Esc fecha só o modal.
+  if (e.key === 'Escape' && isOpen() && !document.querySelector('dialog[open]')) setOpen(false);
 });
 
 // Escolher algo no menu (outra tela, uma conversa, "Nova conversa") fecha a

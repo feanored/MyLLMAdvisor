@@ -1,0 +1,2 @@
+# Scripts que rodam no container Linux (deploy/start.sh): CRLF quebraria o bash.
+*.sh text eol=lf

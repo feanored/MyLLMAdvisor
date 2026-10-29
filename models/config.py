@@ -5,6 +5,7 @@ services (ver `factories/`, `services/`) usam para decidir como se comportar.
 Centralizar tudo num único módulo facilita achar e ajustar qualquer
 parâmetro sem precisar navegar pelas camadas de negócio.
 """
+import os
 from pathlib import Path
 
 # METADATA_FIELDS_EXCLUDED e as demais utilidades de metadata_fields.py são
@@ -18,12 +19,28 @@ __all__ = [
     "LOCAL_IMAGE_ROOTS", "LOCAL_IMAGE_EXTENSIONS",
     "HELP_DOC_GROUPS", "HELP_MEMORY_MAX_TURNS",
     "UPLOAD_DIR", "UPLOAD_MAX_MB", "NAV_ITEMS",
+    "CHROMA_HOST", "CHROMA_PORT", "AUTH_USER", "AUTH_PASSWORD",
 ]
+
+# --- Servidor do ChromaDB ------------------------------------------------------
+# Localmente, o `chroma run` da documentação; no deploy (fly.io), o que as
+# variáveis de ambiente apontarem.
+CHROMA_HOST = os.environ.get("CHROMA_HOST", "localhost")
+CHROMA_PORT = int(os.environ.get("CHROMA_PORT", "8000"))
+
+# --- Acesso -------------------------------------------------------------------
+# Com AUTH_PASSWORD definido (deploy online, via `fly secrets set`), todas as
+# rotas exigem autenticação HTTP básica com AUTH_USER/AUTH_PASSWORD; sem ele
+# (uso local), o acesso é livre. O endereço do Ollama vem de OLLAMA_HOST, lido
+# direto pela biblioteca `ollama`.
+AUTH_USER = os.environ.get("AUTH_USER", "advisor")
+AUTH_PASSWORD = os.environ.get("AUTH_PASSWORD", "")
 
 # --- Modelo / base padrão ---------------------------------------------------
 # qwen3:14b em vez de qwen3:8b: qualidade de resposta melhor observada no uso
-# real.
-DEFAULT_MODEL = "qwen3:14b"
+# real. A variável de ambiente DEFAULT_MODEL troca o padrão (o deploy em CPU,
+# fly.toml, usa o qwen3:8b, mais rápido sem GPU).
+DEFAULT_MODEL = os.environ.get("DEFAULT_MODEL", "qwen3:8b")
 DEFAULT_BASE = "rag_documentos"
 # Modelos de chat que o popup "Trocar modelo" (Ctrl+clique em "Perguntar")
 # pode oferecer, filtrados a partir de `ollama list` — ver ChatService.list_models.

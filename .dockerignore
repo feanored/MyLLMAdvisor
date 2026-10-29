@@ -1,0 +1,14 @@
+.git
+.github
+.venv
+venv
+__pycache__
+*.py[cod]
+.chromadb
+documentos
+demo
+doc
+_site
+fly*.toml
+Dockerfile
+.dockerignore

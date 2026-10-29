@@ -1,0 +1,33 @@
+# Variante do deploy com o Ollama numa GPU FORA do Fly (o Fly desativou as
+# máquinas com GPU em 31/07/2026): aqui ficam só o site e o Chroma, e
+# OLLAMA_HOST (secret) aponta para o Ollama remoto. Mesmo Dockerfile do
+# fly.toml; app e volume próprios, para as duas opções poderem coexistir.
+# Passo a passo em doc/documentation.md, seção "Deploy no fly.io".
+#
+#   fly deploy --config fly.gpu.toml --ha=false
+
+app = "myllmadvisor-gpu"
+primary_region = "gru"
+
+[env]
+  CHROMA_HOST = "127.0.0.1"
+  CHROMA_PORT = "8000"
+  HF_HOME = "/data/huggingface"
+
+[http_service]
+  internal_port = 5001
+  force_https = true
+  auto_stop_machines = "stop"
+  auto_start_machines = true
+  min_machines_running = 0
+
+[[mounts]]
+  source = "advisor_data"
+  destination = "/data"
+  initial_size = "10gb"
+
+# Sem modelos do Ollama na memória: só o site, o Chroma e o Docling (que
+# continua rodando aqui, em CPU, durante uma indexação).
+[[vm]]
+  size = "performance-2x"
+  memory = "8gb"

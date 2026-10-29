@@ -6,11 +6,16 @@ renderizar (`templates/`, todos herdando o layout de `templates/base.html`).
 """
 from flask import (Flask, Response, jsonify, render_template, request, send_file,
                    send_from_directory, stream_with_context)
+import hmac
 import json
 import mimetypes
+import queue
+import threading
 from pathlib import Path
 
 from models import (
+    AUTH_PASSWORD,
+    AUTH_USER,
     DEFAULT_BASE,
     DEFAULT_MODEL,
     HELP_DOC_GROUPS,
@@ -41,6 +46,21 @@ def _layout_context():
     return {"nav_items": NAV_ITEMS}
 
 
+@app.before_request
+def _require_login():
+    """No deploy online (AUTH_PASSWORD definido), toda rota exige autenticação
+    HTTP básica; o navegador pede a senha uma vez e a reenvia sozinho nos
+    fetch/SSE/upload da mesma origem. Sem AUTH_PASSWORD (uso local), libera."""
+    if not AUTH_PASSWORD:
+        return None
+    auth = request.authorization
+    if (auth and hmac.compare_digest((auth.username or "").encode(), AUTH_USER.encode())
+            and hmac.compare_digest((auth.password or "").encode(), AUTH_PASSWORD.encode())):
+        return None
+    return Response("Acesso restrito.", 401,
+                    {"WWW-Authenticate": 'Basic realm="My LLM Advisor", charset="UTF-8"'})
+
+
 def _bool_param(get, key, default):
     """Interpreta um parâmetro booleano vindo de querystring (sempre string)
     ou de JSON (pode já vir bool) da mesma forma: "true" (sem diferenciar
@@ -61,6 +81,39 @@ def _format_sse_event(name, payload):
     else:
         data = payload
     return f"event: {name}\ndata: {data}\n\n"
+
+
+# Em CPU (deploy no fly.io), o modelo pode passar minutos lendo o prompt antes
+# do primeiro pedaço da resposta; um stream calado esse tempo todo pode ser
+# derrubado por um proxy no caminho. Um comentário SSE de tempos em tempos
+# mantém a conexão viva — o front-end ignora linhas sem "data:" (sse.js).
+SSE_KEEPALIVE_SECONDS = 15
+_SSE_KEEPALIVE = ": keep-alive\n\n"
+
+
+def _with_keepalive(events, interval=SSE_KEEPALIVE_SECONDS):
+    """Repassa os eventos de `events` (consumido numa thread própria) e, a
+    cada `interval` segundos sem nenhum, produz None no lugar."""
+    pending = queue.Queue()
+    end = object()
+
+    def pump():
+        try:
+            for item in events:
+                pending.put(item)
+        finally:
+            pending.put(end)
+
+    threading.Thread(target=pump, name="sse-pump", daemon=True).start()
+    while True:
+        try:
+            item = pending.get(timeout=interval)
+        except queue.Empty:
+            yield None
+            continue
+        if item is end:
+            return
+        yield item
 
 
 def _parse_ask_request():
@@ -241,8 +294,13 @@ def ask():
     cancel_event = ChatService.register(params["request_id"])
 
     def generate():
-        for name, payload in ChatService.stream_answer(cancel_event=cancel_event, **params):
-            yield _format_sse_event(name, payload)
+        try:
+            for event in _with_keepalive(ChatService.stream_answer(cancel_event=cancel_event, **params)):
+                yield _SSE_KEEPALIVE if event is None else _format_sse_event(*event)
+        finally:
+            # Navegador fechou a conexão: a thread do stream_answer não
+            # percebe sozinha, então para o modelo como num /ask/cancel.
+            cancel_event.set()
 
     return Response(
         stream_with_context(generate()),

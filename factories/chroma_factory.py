@@ -6,13 +6,16 @@ collection já pronta sem precisar saber os detalhes de construção.
 """
 import chromadb
 
+from models import CHROMA_HOST, CHROMA_PORT
+
 
 class ChromaClientFactory:
-    """Cria o client HTTP do ChromaDB (servidor local, porta padrão)."""
+    """Cria o client HTTP do ChromaDB (CHROMA_HOST/CHROMA_PORT, por padrão o
+    servidor local na porta 8000)."""
 
     @staticmethod
     def create():
-        return chromadb.HttpClient(host="localhost", port=8000)
+        return chromadb.HttpClient(host=CHROMA_HOST, port=CHROMA_PORT)
 
 
 class ChromaCollectionFactory:

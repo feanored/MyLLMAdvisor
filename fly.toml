@@ -1,0 +1,37 @@
+# Deploy do My LLM Advisor no fly.io: uma máquina em CPU com o site, o Chroma
+# e o Ollama (ver Dockerfile e deploy/start.sh), e um volume em /data com o
+# banco, os PDFs e os modelos. Passo a passo em doc/documentation.md, seção
+# "Deploy no fly.io".
+
+app = "myllmadvisor"
+primary_region = "gru"
+
+[env]
+  CHROMA_HOST = "127.0.0.1"
+  CHROMA_PORT = "8000"
+  OLLAMA_MODELS = "/data/ollama"
+  # Em CPU, o chat usa o qwen3:8b (o qwen3:14b local seria lento demais).
+  DEFAULT_MODEL = "qwen3:8b"
+  OLLAMA_PULL_MODELS = "bge-m3 qwen3:8b qwen3.5 glm-ocr"
+  HF_HOME = "/data/huggingface"
+
+[http_service]
+  internal_port = 5001
+  force_https = true
+  # Desliga a máquina sem tráfego (só se paga o tempo ligada) e religa no
+  # próximo acesso. A tela Enviar PDFs aberta consulta o andamento de tempos
+  # em tempos, o que a mantém ligada durante uma indexação.
+  auto_stop_machines = "stop"
+  auto_start_machines = true
+  min_machines_running = 0
+
+[[mounts]]
+  source = "advisor_data"
+  destination = "/data"
+  initial_size = "40gb"
+
+# qwen3:8b (~5 GB) + bge-m3 carregados para o chat, e qwen3.5 + glm-ocr +
+# Docling durante uma indexação: 32 GB dão folga para os dois ao mesmo tempo.
+[[vm]]
+  size = "performance-8x"
+  memory = "32gb"

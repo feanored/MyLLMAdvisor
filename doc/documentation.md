@@ -24,6 +24,7 @@ decisão de implementação. Para a visão geral e o início rápido, veja o
   - [Modo debug (DEBUG)](#modo-debug-debug)
   - [Endpoints](#endpoints)
 - [Demonstração no GitHub Pages](#demonstração-no-github-pages)
+- [Deploy no fly.io](#deploy-no-flyio)
 - [Convenção de nomes de collections](#convenção-de-nomes-de-collections)
 - [Administrar bases](#administrar-bases)
 
@@ -65,7 +66,7 @@ O servidor web é dividido em camadas, cada uma num pacote/módulo próprio:
 |---|---|---|
 | **Controller** | `rag_web.py` | Rotas Flask: lê request, chama o service certo, formata a resposta (JSON, SSE ou template). Nenhuma regra de negócio. |
 | **View** | `templates/` | Marcação das telas; `base.html` tem a barra superior e o menu lateral comuns (ver "Layout comum das telas"). |
-| **Model** | `models/` | Constantes e configuração (modelos padrão, limiares de distância, parâmetros da busca por palavras-chave, stopwords, diretórios de imagem e de upload, documentos do Orientador, links do menu). |
+| **Model** | `models/` | Constantes e configuração (modelos padrão, limiares de distância, parâmetros da busca por palavras-chave, stopwords, diretórios de imagem e de upload, documentos do Orientador, links do menu, endereço do Chroma e senha de acesso, lidos de variáveis de ambiente). |
 | **Factory** | `factories/` | Criação dos objetos complexos: `ChromaClientFactory`/`ChromaCollectionFactory` (client e collection do Chroma, escolhendo a embedding function certa por "dono") e `OllamaClientFactory` (client de chat). |
 | **Service** | `services/keyword_service.py` | `KeywordService` — extração de palavras-chave da pergunta (stopwords, fusão de números com a palavra à esquerda). |
 | **Service** | `services/retrieval_service.py` | `RetrievalService` — busca vetorial (frase inteira e/ou palavras-chave), montagem dos trechos (rows), metadados de filtro, figuras, equações, listagem de collections. |
@@ -216,7 +217,7 @@ Passo a passo juntando as peças das seções acima, na ordem certa:
 
 1. **Ambiente Python** — crie/ative o venv e instale as dependências (ver "Criar ambiente Python 3.14" acima).
 2. **Ollama** — deixe o Ollama rodando (`ollama serve`, ou o app já roda em background) e baixe os modelos usados (ver "Modelos do Ollama" acima).
-3. **Servidor do ChromaDB** — `rag_web.py` fala com o Chroma por **HTTP** (`ChromaClientFactory` → `chromadb.HttpClient(host="localhost", port=8000)`), não abre `.chromadb` direto. Suba o servidor numa aba/terminal separado (deixe rodando):
+3. **Servidor do ChromaDB** — `rag_web.py` fala com o Chroma por **HTTP** (`ChromaClientFactory` → `chromadb.HttpClient(host=CHROMA_HOST, port=CHROMA_PORT)`, por padrão `localhost:8000`), não abre `.chromadb` direto. Suba o servidor numa aba/terminal separado (deixe rodando):
    ```bash
    chroma run --path ./.chromadb --port 8000
    ```
@@ -618,6 +619,96 @@ python -m http.server -d demo/dist 8080   # abre em http://localhost:8080
 
 `?auto=1` no endereço envia a pergunta de exemplo (Orientador) ou o PDF de
 exemplo (Enviar PDFs) sozinho — usado para gerar os screenshots.
+
+## Deploy no fly.io
+
+A versão online roda tudo numa única máquina do Fly, **em CPU** (sem GPU):
+o site, o servidor do Chroma e o Ollama, com um volume em `/data` guardando
+o banco, os PDFs enviados, os modelos do Ollama e os do Docling
+(HuggingFace). Os arquivos:
+
+- `Dockerfile` — Python 3.14 com o `requirements.txt` (torch na build de CPU,
+  sem as bibliotecas CUDA) e o binário do Ollama copiado da imagem oficial,
+  só com as bibliotecas de CPU. `./.chromadb` e `./documentos` são links para
+  o volume, então o código continua usando os mesmos caminhos relativos.
+- `deploy/start.sh` — sobe o Ollama, o Chroma e o site (gunicorn, **um
+  processo só**, porque a fila de indexação e a memória das conversas vivem
+  na memória dele) e baixa em segundo plano os modelos de
+  `OLLAMA_PULL_MODELS` que ainda não estão no volume. Se um dos três
+  processos cair, a máquina reinicia.
+- `fly.toml` — região `gru` (São Paulo), máquina `performance-8x` com 32 GB
+  (o chat e uma indexação ao mesmo tempo cabem), volume
+  `advisor_data` de 40 GB, e **desligamento automático** sem tráfego: só se
+  paga o tempo com a máquina ligada (mais o volume), e o primeiro acesso
+  depois de um tempo parado demora alguns segundos a mais, além de recarregar
+  o modelo na memória.
+
+**Senha.** Com a variável `AUTH_PASSWORD` definida, todas as rotas pedem
+autenticação HTTP básica (usuário `AUTH_USER`, padrão `advisor`): o navegador
+pede a senha uma vez e a reenvia sozinho. Sem ela (uso local) o acesso é
+livre. Ver `_require_login` em `rag_web.py`.
+
+**Stream da resposta.** Em CPU o modelo pode passar minutos lendo o prompt
+antes do primeiro pedaço da resposta; para o proxy não derrubar a conexão
+calada, o `/ask` manda um comentário SSE (`: keep-alive`) a cada
+`SSE_KEEPALIVE_SECONDS`, ignorado pelo front-end. Se o navegador fechar a
+conexão, a geração é cancelada como num `/ask/cancel`.
+
+Primeiro deploy (PowerShell; no Linux/macOS, `curl -L https://fly.io/install.sh | sh`):
+
+```powershell
+iwr https://fly.io/install.ps1 -useb | iex     # instala o flyctl
+fly auth login
+fly apps create myllmadvisor                    # nome ocupado? troque também o "app" do fly.toml
+fly secrets set AUTH_PASSWORD="uma-senha-forte" --app myllmadvisor
+fly deploy --ha=false                           # uma máquina só: o volume e o estado são dela
+fly logs                                        # acompanhe o download dos modelos (~20 GB, só na 1ª vez)
+fly open
+```
+
+Depois, cada `fly deploy` reconstrói a imagem e mantém o volume. Enquanto os
+modelos baixam, perguntas e envios falham dizendo que o modelo não foi
+encontrado. A base online começa vazia: envie os PDFs pela tela **Enviar
+PDFs**, com a tela aberta até o fim (a máquina se desliga sem tráfego, e é
+a consulta periódica dessa tela que a mantém ligada durante a indexação).
+
+**Modelo de chat em CPU.** Online, o Orientador usa o `qwen3:8b`
+(`DEFAULT_MODEL` no `[env]` do `fly.toml`, que sobrepõe o `qwen3:14b` de
+`models/config.py`), e só ele é baixado: o 14b seria lento demais sem GPU.
+Mesmo assim, a resposta e a indexação (descrição das figuras e OCR das
+fórmulas) ficam bem mais lentas que numa GPU local. Para voltar ao 14b,
+troque o modelo em `DEFAULT_MODEL` e em `OLLAMA_PULL_MODELS`; o "Trocar
+modelo" (Ctrl+clique em "Perguntar") só oferece os modelos baixados.
+
+### Variante com GPU: Ollama fora do Fly
+
+O Fly desativou as máquinas com GPU em 31/07/2026, então a GPU tem de
+morar em outro lugar: um provedor de GPU (um pod com a imagem
+`ollama/ollama`) ou o seu próprio PC. O `fly.gpu.toml` sobe no Fly só o site
+e o Chroma, numa máquina menor (`performance-2x`, 8 GB, volume de 10 GB), e
+manda tudo o que é modelo (chat, embedding, figuras, fórmulas) para o Ollama
+em `OLLAMA_HOST`. O Docling continua rodando no Fly, em CPU. É o mesmo
+`Dockerfile`, com app (`myllmadvisor-gpu`) e volume próprios, para as duas
+opções poderem coexistir enquanto você compara.
+
+Nada no código muda: a biblioteca `ollama` lê sozinha `OLLAMA_HOST` e, se
+definido, `OLLAMA_API_KEY`, que vai como `Authorization: Bearer` em toda
+chamada. Com `OLLAMA_HOST` definido, o `deploy/start.sh` não sobe o Ollama
+local nem baixa modelos. O Ollama não tem autenticação própria: exposto na
+internet, ponha na frente dele um proxy que exija esse token (ou use uma
+rede privada, como Tailscale), senão qualquer um usa a sua GPU.
+
+```powershell
+fly apps create myllmadvisor-gpu
+fly secrets set --app myllmadvisor-gpu AUTH_PASSWORD="uma-senha-forte" `
+    OLLAMA_HOST="https://endereco-do-seu-ollama" OLLAMA_API_KEY="token-do-proxy"
+fly deploy --config fly.gpu.toml --ha=false
+```
+
+No Ollama remoto, baixe antes os mesmos modelos (`bge-m3`, `qwen3:14b`,
+`qwen3.5`, `glm-ocr`). Cada pergunta faz algumas chamadas de embedding além
+do chat, então um Ollama perto de São Paulo (ou troque o `primary_region`
+para perto dele) deixa a resposta mais ágil.
 
 ## Convenção de nomes de collections
 

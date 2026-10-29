@@ -37,9 +37,9 @@ AUTH_USER = os.environ.get("AUTH_USER", "advisor")
 AUTH_PASSWORD = os.environ.get("AUTH_PASSWORD", "")
 
 # --- Modelo / base padrão ---------------------------------------------------
-# qwen3:14b em vez de qwen3:8b: qualidade de resposta melhor observada no uso
-# real. A variável de ambiente DEFAULT_MODEL troca o padrão (o deploy em CPU,
-# fly.toml, usa o qwen3:8b, mais rápido sem GPU).
+# qwen3:8b, local e online (mais rápido, e o único viável em CPU no fly.io).
+# A variável de ambiente DEFAULT_MODEL troca o padrão (ex.: qwen3:14b, com
+# qualidade de resposta melhor numa GPU local).
 DEFAULT_MODEL = os.environ.get("DEFAULT_MODEL", "qwen3:8b")
 DEFAULT_BASE = "rag_documentos"
 # Modelos de chat que o popup "Trocar modelo" (Ctrl+clique em "Perguntar")

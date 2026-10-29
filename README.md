@@ -39,7 +39,7 @@ python -m venv .venv
 pip install flask chromadb ollama numpy docling
 
 ollama pull bge-m3       # embedding
-ollama pull qwen3:14b    # chat
+ollama pull qwen3:8b     # chat
 ollama pull qwen3.5      # descrição das figuras
 ollama pull glm-ocr      # equações -> LaTeX
 ```

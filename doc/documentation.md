@@ -186,7 +186,7 @@ rodando: `ollama serve`, ou o app em background).
 
 ```bash
 ollama pull bge-m3        # embedding (~1,2 GB)
-ollama pull qwen3:14b     # chat do Orientador (~9,3 GB)
+ollama pull qwen3:8b      # chat do Orientador (~5,2 GB)
 ollama pull qwen3.5       # descrição das figuras dos PDFs (~6,6 GB, multimodal)
 ollama pull glm-ocr       # equações -> LaTeX (~2,7 GB)
 ```
@@ -200,7 +200,7 @@ ollama pull qwen3:8b      # rag_papers.py --answer e opção mais leve no "Troca
 | Papel | Modelo | Onde se configura | Usado por |
 |---|---|---|---|
 | Embedding | `bge-m3` | `EMBED_MODEL` (`rag_papers.py`) | indexação e busca do chat |
-| Chat (web) | `qwen3:14b` | `DEFAULT_MODEL`; opções do "Trocar modelo" em `ALLOWED_CHAT_MODELS` (`models/config.py`) | Orientador (`/`) |
+| Chat (web) | `qwen3:8b` | `DEFAULT_MODEL`; opções do "Trocar modelo" em `ALLOWED_CHAT_MODELS` (`models/config.py`) | Orientador (`/`) |
 | Descrição de figuras | `qwen3.5` | `DESCRIBE_MODEL` (`rag_papers.py`) | `rag_papers.py index` e `/upload` |
 | Equações → LaTeX | `glm-ocr` | `FORMULA_MODEL` (`rag_papers.py`) | `rag_papers.py index` (`--formulas ollama`, padrão) e `/upload` |
 | Resposta no terminal | `qwen3:8b` | `ASK_MODEL` (`rag_papers.py`) | `rag_papers.py query --answer` |
@@ -673,8 +673,8 @@ PDFs**, com a tela aberta até o fim (a máquina se desliga sem tráfego, e é
 a consulta periódica dessa tela que a mantém ligada durante a indexação).
 
 **Modelo de chat em CPU.** Online, o Orientador usa o `qwen3:8b`
-(`DEFAULT_MODEL` no `[env]` do `fly.toml`, que sobrepõe o `qwen3:14b` de
-`models/config.py`), e só ele é baixado: o 14b seria lento demais sem GPU.
+(o mesmo padrão local de `DEFAULT_MODEL` em `models/config.py`, repetido no
+`[env]` do `fly.toml`), e só ele é baixado: o 14b seria lento demais sem GPU.
 Mesmo assim, a resposta e a indexação (descrição das figuras e OCR das
 fórmulas) ficam bem mais lentas que numa GPU local. Para voltar ao 14b,
 troque o modelo em `DEFAULT_MODEL` e em `OLLAMA_PULL_MODELS`; o "Trocar
@@ -705,7 +705,7 @@ fly secrets set --app myllmadvisor-gpu AUTH_PASSWORD="uma-senha-forte" `
 fly deploy --config fly.gpu.toml --ha=false
 ```
 
-No Ollama remoto, baixe antes os mesmos modelos (`bge-m3`, `qwen3:14b`,
+No Ollama remoto, baixe antes os mesmos modelos (`bge-m3`, `qwen3:8b`,
 `qwen3.5`, `glm-ocr`). Cada pergunta faz algumas chamadas de embedding além
 do chat, então um Ollama perto de São Paulo (ou troque o `primary_region`
 para perto dele) deixa a resposta mais ágil.

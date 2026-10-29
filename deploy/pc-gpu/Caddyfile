@@ -1,0 +1,26 @@
+# Proxy na frente do Ollama do PC com GPU: só repassa as chamadas que trazem
+# "Authorization: Bearer <token>" (o OLLAMA_API_KEY do app no Fly); o resto
+# leva 401. O Tailscale Funnel publica esta porta na internet em HTTPS; o
+# Ollama em si continua ouvindo só em 127.0.0.1:11434.
+# {$OLLAMA_API_KEY} vem do ambiente, posto pelo iniciar.ps1.
+{
+	admin off
+	auto_https off
+}
+
+:11435 {
+	bind 127.0.0.1
+
+	@autorizado header Authorization "Bearer {$OLLAMA_API_KEY}"
+	handle @autorizado {
+		reverse_proxy 127.0.0.1:11434 {
+			# O Ollama só aceita Host local quando ouve em 127.0.0.1.
+			header_up Host localhost:11434
+			header_up -Authorization
+			# Repassa cada pedaço da resposta em streaming na hora.
+			flush_interval -1
+		}
+	}
+
+	respond 401
+}

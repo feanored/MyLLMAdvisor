@@ -710,6 +710,49 @@ No Ollama remoto, baixe antes os mesmos modelos (`bge-m3`, `qwen3:8b`,
 do chat, então um Ollama perto de São Paulo (ou troque o `primary_region`
 para perto dele) deixa a resposta mais ágil.
 
+#### No seu PC: Windows com GPU AMD (`deploy/pc-gpu/`)
+
+Um PC com Windows e uma Radeon (RX 6000/7000/9000, 8 GB de VRAM bastam)
+serve o Ollama, sem domínio próprio e sem abrir porta no roteador:
+
+- **Ollama** ouvindo só em `127.0.0.1:11434`, como na instalação padrão;
+- **Caddy** (`deploy/pc-gpu/Caddyfile`) em `127.0.0.1:11435`, repassando ao
+  Ollama só as chamadas com `Authorization: Bearer <token>` (as outras levam
+  401). Ele reescreve o `Host` para `localhost`, porque o Ollama recusa
+  hosts de fora quando ouve só no loopback;
+- **Tailscale Funnel**, que publica a porta 11435 na internet num endereço
+  HTTPS fixo e gratuito, `https://<pc>.<tailnet>.ts.net`.
+
+No PC com a GPU, com uma cópia do repositório (basta a pasta
+`deploy/pc-gpu`), rode uma vez:
+
+```powershell
+powershell -ExecutionPolicy Bypass -File deploy\pc-gpu\instalar.ps1
+```
+
+Ele instala os três programas pelo `winget`, baixa `bge-m3`, `qwen3:8b`,
+`qwen3.5` e `glm-ocr`, gera o token em
+`%LOCALAPPDATA%\MyLLMAdvisor\ollama-token.txt` (fora do repositório), faz o
+login no Tailscale (abre o navegador), liga o Funnel e agenda o
+`iniciar.ps1` (Ollama e Caddy) a cada logon. Na primeira vez, o Funnel
+pode pedir para ser habilitado na tailnet: abra o link que ele mostrar,
+aprove e rode o script de novo. No fim, o script mostra o `fly secrets set`
+pronto, com `OLLAMA_HOST` e `OLLAMA_API_KEY`, para rodar na máquina do
+flyctl antes do `fly deploy --config fly.gpu.toml`.
+
+Para conferir se o Ollama está mesmo na GPU, faça uma pergunta e rode
+`ollama ps` no PC: a coluna `PROCESSOR` deve mostrar `100% GPU`. Se mostrar
+CPU, a placa não foi reconhecida pelo ROCm do Ollama para Windows (nem toda
+RX 6000 é); experimente o backend Vulkan definindo `OLLAMA_VULKAN=1` nas
+variáveis de ambiente do usuário e reinicie o Ollama. Com 8 GB, o `qwen3:8b`
+e o `bge-m3` cabem juntos; numa indexação, o Ollama troca os modelos na
+memória conforme a vez (`qwen3.5` para as figuras, `glm-ocr` para as
+fórmulas).
+
+O site só responde com o PC ligado e o usuário logado (a tarefa agendada
+roda no logon). Com ele desligado, as perguntas falham com erro de conexão
+ao Ollama.
+
 ## Convenção de nomes de collections
 
 | Collection | Origem | Embedding |

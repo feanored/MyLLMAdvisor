@@ -56,9 +56,10 @@ terminar, pergunte no **Orientador**. Para indexar uma pasta inteira pela
 linha de comando, com o servidor do Chroma parado:
 `python rag_papers.py index <pasta_com_pdfs>`.
 
-Para colocar online, com senha, há um deploy pronto para o
-[fly.io](https://fly.io/): tudo em CPU numa máquina só (`fly.toml`), ou só o
-site no Fly com o Ollama numa GPU em outro lugar (`fly.gpu.toml`). Veja
+A versão online, com senha, fica no [fly.io](https://fly.io/): o site e o
+Chroma no Fly (`fly.gpu.toml`), e o Ollama num PC com GPU, publicado pelo
+Tailscale Funnel (`deploy/pc-gpu/`). Há também a alternativa de tudo em CPU
+numa máquina só do Fly (`fly.toml`). Veja
 [Deploy no fly.io](doc/documentation.md#deploy-no-flyio).
 
 ## Estrutura
@@ -70,7 +71,7 @@ site no Fly com o Ollama numa GPU em outro lugar (`fly.gpu.toml`). Veja
 | `services/`, `factories/`, `models/` | regras de negócio, criação dos clients e configuração (`models/config.py`) |
 | `templates/`, `static/` | telas (layout comum em `templates/base.html`) e front-end em módulos ES |
 | `demo/` | demonstração estática para o GitHub Pages |
-| `Dockerfile`, `fly.toml`, `fly.gpu.toml`, `deploy/` | deploy no fly.io (em CPU, ou com o Ollama numa GPU externa) |
+| `Dockerfile`, `fly.toml`, `fly.gpu.toml`, `deploy/` | deploy no fly.io (com o Ollama num PC com GPU, ou tudo em CPU) |
 
 ## Documentação
 

@@ -25,6 +25,10 @@ decisão de implementação. Para a visão geral e o início rápido, veja o
   - [Endpoints](#endpoints)
 - [Demonstração no GitHub Pages](#demonstração-no-github-pages)
 - [Deploy no fly.io](#deploy-no-flyio)
+  - [Ollama no PC: Windows com GPU AMD (deploy/pc-gpu/)](#ollama-no-pc-windows-com-gpu-amd-deploypc-gpu)
+  - [App no Fly](#app-no-fly)
+  - [Trocar a senha e o token](#trocar-a-senha-e-o-token)
+  - [Alternativa: tudo em CPU (fly.toml)](#alternativa-tudo-em-cpu-flytoml)
 - [Convenção de nomes de collections](#convenção-de-nomes-de-collections)
 - [Administrar bases](#administrar-bases)
 
@@ -622,95 +626,53 @@ exemplo (Enviar PDFs) sozinho — usado para gerar os screenshots.
 
 ## Deploy no fly.io
 
-A versão online roda tudo numa única máquina do Fly, **em CPU** (sem GPU):
-o site, o servidor do Chroma e o Ollama, com um volume em `/data` guardando
-o banco, os PDFs enviados, os modelos do Ollama e os do Docling
-(HuggingFace). Os arquivos:
+A versão online fica em <https://myllmadvisor-gpu.fly.dev> (app
+`myllmadvisor-gpu`, configurado no `fly.gpu.toml`) e roda em duas partes:
+
+- **no Fly**, uma máquina pequena (`performance-2x`, 8 GB, região `gru`)
+  com o site e o servidor do Chroma, e um volume `advisor_data` de 10 GB em
+  `/data` com o banco, os PDFs enviados e os modelos do Docling
+  (HuggingFace). O Docling roda ali mesmo, em CPU, durante uma indexação;
+- **num PC com GPU** (o Fly desativou as máquinas com GPU em 31/07/2026), o
+  Ollama com todos os modelos (chat, embedding, figuras e fórmulas),
+  publicado na internet pelo Tailscale Funnel atrás de um proxy que exige
+  um token.
+
+Os arquivos:
 
 - `Dockerfile` — Python 3.14 com o `requirements.txt` (torch na build de CPU,
   sem as bibliotecas CUDA) e o binário do Ollama copiado da imagem oficial,
-  só com as bibliotecas de CPU. `./.chromadb` e `./documentos` são links para
-  o volume, então o código continua usando os mesmos caminhos relativos.
-- `deploy/start.sh` — sobe o Ollama, o Chroma e o site (gunicorn, **um
-  processo só**, porque a fila de indexação e a memória das conversas vivem
-  na memória dele) e baixa em segundo plano os modelos de
-  `OLLAMA_PULL_MODELS` que ainda não estão no volume. Se um dos três
-  processos cair, a máquina reinicia.
-- `fly.toml` — região `gru` (São Paulo), máquina `performance-8x` com 32 GB
-  (o chat e uma indexação ao mesmo tempo cabem), volume
-  `advisor_data` de 40 GB, e **desligamento automático** sem tráfego: só se
-  paga o tempo com a máquina ligada (mais o volume), e o primeiro acesso
-  depois de um tempo parado demora alguns segundos a mais, além de recarregar
-  o modelo na memória.
+  só com as bibliotecas de CPU (usado só na
+  [alternativa em CPU](#alternativa-tudo-em-cpu-flytoml)). `./.chromadb` e
+  `./documentos` são links para o volume, então o código continua usando os
+  mesmos caminhos relativos.
+- `deploy/start.sh` — sobe o Chroma e o site (gunicorn, **um processo só**,
+  porque a fila de indexação e a memória das conversas vivem na memória
+  dele). Com `OLLAMA_HOST` definido, não sobe o Ollama local nem baixa
+  modelos. Se um dos processos cair, a máquina reinicia.
+- `fly.gpu.toml` — a máquina, o volume e o **desligamento automático** sem
+  tráfego: só se paga o tempo com a máquina ligada (mais o volume), e o
+  primeiro acesso depois de um tempo parado demora alguns segundos a mais.
+- `deploy/pc-gpu/` — instalação e partida do Ollama no PC com a GPU.
+
+Nada no código muda para o Ollama ser remoto: a biblioteca `ollama` lê
+sozinha `OLLAMA_HOST` e, se definido, `OLLAMA_API_KEY`, que vai como
+`Authorization: Bearer` em toda chamada. O Ollama não tem autenticação
+própria: exposto na internet, ele precisa de um proxy na frente que exija
+esse token (ou de uma rede privada), senão qualquer um usa a sua GPU.
 
 **Senha.** Com a variável `AUTH_PASSWORD` definida, todas as rotas pedem
 autenticação HTTP básica (usuário `AUTH_USER`, padrão `advisor`): o navegador
 pede a senha uma vez e a reenvia sozinho. Sem ela (uso local) o acesso é
 livre. Ver `_require_login` em `rag_web.py`.
 
-**Stream da resposta.** Em CPU o modelo pode passar minutos lendo o prompt
-antes do primeiro pedaço da resposta; para o proxy não derrubar a conexão
-calada, o `/ask` manda um comentário SSE (`: keep-alive`) a cada
-`SSE_KEEPALIVE_SECONDS`, ignorado pelo front-end. Se o navegador fechar a
-conexão, a geração é cancelada como num `/ask/cancel`.
+**Stream da resposta.** O modelo pode passar um bom tempo lendo o prompt
+antes do primeiro pedaço da resposta (minutos, em CPU); para o proxy não
+derrubar a conexão calada, o `/ask` manda um comentário SSE (`: keep-alive`)
+a cada `SSE_KEEPALIVE_SECONDS`, ignorado pelo front-end. Se o navegador
+fechar a conexão, a geração é cancelada como num `/ask/cancel`.
 
-Primeiro deploy (PowerShell; no Linux/macOS, `curl -L https://fly.io/install.sh | sh`):
-
-```powershell
-iwr https://fly.io/install.ps1 -useb | iex     # instala o flyctl
-fly auth login
-fly apps create myllmadvisor                    # nome ocupado? troque também o "app" do fly.toml
-fly secrets set AUTH_PASSWORD="uma-senha-forte" --app myllmadvisor
-fly deploy --ha=false                           # uma máquina só: o volume e o estado são dela
-fly logs                                        # acompanhe o download dos modelos (~20 GB, só na 1ª vez)
-fly open
-```
-
-Depois, cada `fly deploy` reconstrói a imagem e mantém o volume. Enquanto os
-modelos baixam, perguntas e envios falham dizendo que o modelo não foi
-encontrado. A base online começa vazia: envie os PDFs pela tela **Enviar
-PDFs**, com a tela aberta até o fim (a máquina se desliga sem tráfego, e é
-a consulta periódica dessa tela que a mantém ligada durante a indexação).
-
-**Modelo de chat em CPU.** Online, o Orientador usa o `qwen3:8b`
-(o mesmo padrão local de `DEFAULT_MODEL` em `models/config.py`, repetido no
-`[env]` do `fly.toml`), e só ele é baixado: o 14b seria lento demais sem GPU.
-Mesmo assim, a resposta e a indexação (descrição das figuras e OCR das
-fórmulas) ficam bem mais lentas que numa GPU local. Para voltar ao 14b,
-troque o modelo em `DEFAULT_MODEL` e em `OLLAMA_PULL_MODELS`; o "Trocar
-modelo" (Ctrl+clique em "Perguntar") só oferece os modelos baixados.
-
-### Variante com GPU: Ollama fora do Fly
-
-O Fly desativou as máquinas com GPU em 31/07/2026, então a GPU tem de
-morar em outro lugar: um provedor de GPU (um pod com a imagem
-`ollama/ollama`) ou o seu próprio PC. O `fly.gpu.toml` sobe no Fly só o site
-e o Chroma, numa máquina menor (`performance-2x`, 8 GB, volume de 10 GB), e
-manda tudo o que é modelo (chat, embedding, figuras, fórmulas) para o Ollama
-em `OLLAMA_HOST`. O Docling continua rodando no Fly, em CPU. É o mesmo
-`Dockerfile`, com app (`myllmadvisor-gpu`) e volume próprios, para as duas
-opções poderem coexistir enquanto você compara.
-
-Nada no código muda: a biblioteca `ollama` lê sozinha `OLLAMA_HOST` e, se
-definido, `OLLAMA_API_KEY`, que vai como `Authorization: Bearer` em toda
-chamada. Com `OLLAMA_HOST` definido, o `deploy/start.sh` não sobe o Ollama
-local nem baixa modelos. O Ollama não tem autenticação própria: exposto na
-internet, ponha na frente dele um proxy que exija esse token (ou use uma
-rede privada, como Tailscale), senão qualquer um usa a sua GPU.
-
-```powershell
-fly apps create myllmadvisor-gpu
-fly secrets set --app myllmadvisor-gpu AUTH_PASSWORD="uma-senha-forte" `
-    OLLAMA_HOST="https://endereco-do-seu-ollama" OLLAMA_API_KEY="token-do-proxy"
-fly deploy --config fly.gpu.toml --ha=false
-```
-
-No Ollama remoto, baixe antes os mesmos modelos (`bge-m3`, `qwen3:8b`,
-`qwen3.5`, `glm-ocr`). Cada pergunta faz algumas chamadas de embedding além
-do chat, então um Ollama perto de São Paulo (ou troque o `primary_region`
-para perto dele) deixa a resposta mais ágil.
-
-#### No seu PC: Windows com GPU AMD (`deploy/pc-gpu/`)
+### Ollama no PC: Windows com GPU AMD (`deploy/pc-gpu/`)
 
 Um PC com Windows e uma Radeon (RX 6000/7000/9000, 8 GB de VRAM bastam)
 serve o Ollama, sem domínio próprio e sem abrir porta no roteador:
@@ -737,8 +699,7 @@ login no Tailscale (abre o navegador), liga o Funnel e agenda o
 `iniciar.ps1` (Ollama e Caddy) a cada logon. Na primeira vez, o Funnel
 pode pedir para ser habilitado na tailnet: abra o link que ele mostrar,
 aprove e rode o script de novo. No fim, o script mostra o `fly secrets set`
-pronto, com `OLLAMA_HOST` e `OLLAMA_API_KEY`, para rodar na máquina do
-flyctl antes do `fly deploy --config fly.gpu.toml`.
+pronto, com `OLLAMA_HOST` e `OLLAMA_API_KEY`, para o passo seguinte.
 
 Para conferir se o Ollama está mesmo na GPU, faça uma pergunta e rode
 `ollama ps` no PC: a coluna `PROCESSOR` deve mostrar `100% GPU`. Se mostrar
@@ -752,6 +713,112 @@ fórmulas).
 O site só responde com o PC ligado e o usuário logado (a tarefa agendada
 roda no logon). Com ele desligado, as perguntas falham com erro de conexão
 ao Ollama.
+
+Em vez do PC, serve também um provedor de GPU (um pod com a imagem
+`ollama/ollama` e os mesmos modelos), desde que atrás de um proxy com
+token. Cada pergunta faz algumas chamadas de embedding além do chat, então
+um Ollama perto de São Paulo (ou o `primary_region` trocado para perto
+dele) deixa a resposta mais ágil.
+
+### App no Fly
+
+Primeiro deploy (PowerShell; no Linux/macOS, `curl -L https://fly.io/install.sh | sh`),
+com o `OLLAMA_HOST` e o `OLLAMA_API_KEY` que o `instalar.ps1` mostrou:
+
+```powershell
+iwr https://fly.io/install.ps1 -useb | iex     # instala o flyctl
+fly auth login
+fly apps create myllmadvisor-gpu                # nome ocupado? troque também o "app" do fly.gpu.toml
+fly secrets set --app myllmadvisor-gpu AUTH_PASSWORD="uma-senha-forte" `
+    OLLAMA_HOST="https://<pc>.<tailnet>.ts.net" OLLAMA_API_KEY="token-do-proxy"
+fly deploy --config fly.gpu.toml --ha=false     # uma máquina só: o volume e o estado são dela
+fly open
+```
+
+Para conferir se o site chega ao Ollama do PC, o `/models` deve listar os
+modelos de chat de lá:
+
+```powershell
+curl.exe -u advisor:uma-senha-forte https://myllmadvisor-gpu.fly.dev/models
+```
+
+Depois, cada `fly deploy --config fly.gpu.toml` reconstrói a imagem e
+mantém o volume. A base online começa vazia: envie os PDFs pela tela
+**Enviar PDFs**, com a tela aberta até o fim (a máquina se desliga sem
+tráfego, e é a consulta periódica dessa tela que a mantém ligada durante a
+indexação).
+
+### Trocar a senha e o token
+
+**Senha do site** (`AUTH_PASSWORD`), de qualquer máquina com o flyctl:
+
+```powershell
+fly secrets set --app myllmadvisor-gpu AUTH_PASSWORD="nova-senha-forte"
+```
+
+O `secrets set` já reinicia a máquina com o valor novo. O navegador guarda
+a senha antiga e só pede de novo depois de fechado (ou numa janela
+anônima). O usuário também pode mudar, com `AUTH_USER="outro-nome"` no
+mesmo comando.
+
+**Token do Ollama** (`OLLAMA_API_KEY`), quando ele vazar ou por precaução.
+No PC com a GPU, num PowerShell (se o flyctl estiver em outra máquina,
+rode a última linha lá, com o conteúdo do arquivo do token):
+
+```powershell
+$tokenFile = Join-Path $env:LOCALAPPDATA "MyLLMAdvisor\ollama-token.txt"
+$bytes = New-Object byte[] 32
+[Security.Cryptography.RandomNumberGenerator]::Create().GetBytes($bytes)
+-join ($bytes | ForEach-Object { $_.ToString("x2") }) | Set-Content $tokenFile -NoNewline
+# O Caddy só lê o token ao subir: reinicia a tarefa (Ollama e Caddy).
+Stop-ScheduledTask -TaskName "MyLLMAdvisor Ollama"
+Get-Process caddy -ErrorAction SilentlyContinue | Stop-Process
+Start-ScheduledTask -TaskName "MyLLMAdvisor Ollama"
+# Passa o token novo ao app no Fly (reinicia a máquina).
+fly secrets set --app myllmadvisor-gpu OLLAMA_API_KEY="$((Get-Content $tokenFile -Raw).Trim())"
+```
+
+Entre a troca no PC e o fim do `secrets set`, as perguntas falham com 401
+do Ollama. Para conferir, o token antigo deve levar 401 e o novo listar os
+modelos:
+
+```powershell
+$token = (Get-Content $tokenFile -Raw).Trim()
+curl.exe -H "Authorization: Bearer $token" https://<pc>.<tailnet>.ts.net/api/tags
+```
+
+**Cortar o acesso na hora**, sem trocar nada: no PC, `tailscale funnel reset`
+tira o Ollama da internet (o site passa a falhar nas perguntas);
+`tailscale funnel --bg 11435` o publica de novo, no mesmo endereço.
+
+Na [alternativa em CPU](#alternativa-tudo-em-cpu-flytoml) não há token (o
+Ollama fica dentro da máquina); a senha troca do mesmo jeito, com
+`--app myllmadvisor`.
+
+### Alternativa: tudo em CPU (`fly.toml`)
+
+O `fly.toml` sobe tudo numa máquina só do Fly, inclusive o Ollama, **em
+CPU**: `performance-8x` com 32 GB (o chat e uma indexação ao mesmo tempo
+cabem) e volume de 40 GB, que guarda também os modelos do Ollama. Dispensa
+o PC ligado, mas a resposta e a indexação (descrição das figuras e OCR das
+fórmulas) ficam bem mais lentas, e a máquina custa bem mais pelo tempo
+ligada. Foi o primeiro deploy (app `myllmadvisor`, removido em 30/10/2026).
+
+```powershell
+fly apps create myllmadvisor                    # nome ocupado? troque também o "app" do fly.toml
+fly secrets set AUTH_PASSWORD="uma-senha-forte" --app myllmadvisor
+fly deploy --ha=false
+fly logs                                        # acompanhe o download dos modelos (~20 GB, só na 1ª vez)
+```
+
+Sem `OLLAMA_HOST`, o `deploy/start.sh` sobe o Ollama local e baixa em
+segundo plano os modelos de `OLLAMA_PULL_MODELS` que ainda não estão no
+volume; enquanto baixam, perguntas e envios falham dizendo que o modelo não
+foi encontrado. O chat usa o `qwen3:8b` (o mesmo padrão local de
+`DEFAULT_MODEL` em `models/config.py`, repetido no `[env]` do `fly.toml`), e
+só ele é baixado: o 14b seria lento demais sem GPU. Para voltar ao 14b,
+troque o modelo em `DEFAULT_MODEL` e em `OLLAMA_PULL_MODELS`; o "Trocar
+modelo" (Ctrl+clique em "Perguntar") só oferece os modelos baixados.
 
 ## Convenção de nomes de collections
 

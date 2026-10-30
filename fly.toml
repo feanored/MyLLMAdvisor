@@ -1,7 +1,7 @@
-# Deploy do My LLM Advisor no fly.io: uma máquina em CPU com o site, o Chroma
-# e o Ollama (ver Dockerfile e deploy/start.sh), e um volume em /data com o
-# banco, os PDFs e os modelos. Passo a passo em doc/documentation.md, seção
-# "Deploy no fly.io".
+# Alternativa ao deploy em uso (fly.gpu.toml): uma máquina em CPU com o
+# site, o Chroma e o Ollama (ver Dockerfile e deploy/start.sh), e um volume
+# em /data com o banco, os PDFs e os modelos. Passo a passo em
+# doc/documentation.md, seção "Deploy no fly.io".
 
 app = "myllmadvisor"
 primary_region = "gru"

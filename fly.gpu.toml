@@ -1,8 +1,9 @@
-# Variante do deploy com o Ollama numa GPU FORA do Fly (o Fly desativou as
-# máquinas com GPU em 31/07/2026): aqui ficam só o site e o Chroma, e
-# OLLAMA_HOST (secret) aponta para o Ollama remoto. Mesmo Dockerfile do
-# fly.toml; app e volume próprios, para as duas opções poderem coexistir.
-# Passo a passo em doc/documentation.md, seção "Deploy no fly.io".
+# Deploy em uso do My LLM Advisor, com o Ollama numa GPU FORA do Fly (o Fly
+# desativou as máquinas com GPU em 31/07/2026; ver deploy/pc-gpu/): aqui
+# ficam só o site e o Chroma, e OLLAMA_HOST (secret) aponta para o Ollama
+# remoto. Mesmo Dockerfile do fly.toml (a alternativa tudo em CPU); app e
+# volume próprios. Passo a passo em doc/documentation.md, seção "Deploy no
+# fly.io".
 #
 #   fly deploy --config fly.gpu.toml --ha=false
 

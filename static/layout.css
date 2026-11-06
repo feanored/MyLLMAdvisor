@@ -46,6 +46,14 @@ body { font-family: system-ui, sans-serif; background: var(--page-bg); color: va
 .app-title { font-family: Charter, 'Sitka Text', Cambria, Georgia, serif; font-size: 1.35rem; font-weight: 600;
               letter-spacing: .01em; padding: .9rem 0; color: inherit; text-decoration: none; }
 
+/* Direita da barra superior: Entrar / Minha conta (templates/base.html). */
+.header-actions { display: flex; align-items: center; gap: .75rem; }
+.header-link { display: inline-flex; align-items: center; gap: .45rem; padding: .4rem .75rem; border-radius: 6px;
+               background: transparent; color: #fff; border: 1px solid rgba(255,255,255,.35);
+               font-size: .88rem; text-decoration: none; cursor: pointer; white-space: nowrap; }
+.header-link:hover, .header-link.active { background: rgba(255,255,255,.14); }
+.header-link .nav-icon { color: inherit; }
+
 .body-row { flex: 1 1 auto; min-height: 0; display: flex; overflow: hidden; }
 .main-col { flex: 1 1 auto; min-width: 0; display: flex; flex-direction: column; }
 
@@ -77,7 +85,9 @@ button:disabled { background: var(--accent-pale); cursor: not-allowed; }
 .btn-secondary:hover { background: #f7fafc; color: var(--ink-soft); }
 
 .btn-link { background: transparent; color: var(--accent); font-size: .8rem; white-space: nowrap; }
-.btn-link:hover { color: var(--accent-dark); text-decoration: underline; }
+/* Fundo transparente também no hover: sem isso vale o do button:hover acima
+   (azul-escuro), e o texto, da mesma cor, some. */
+.btn-link:hover { background: transparent; color: var(--accent-dark); text-decoration: underline; }
 
 :focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
 
@@ -102,6 +112,30 @@ button:disabled { background: var(--accent-pale); cursor: not-allowed; }
   from { opacity: 0; transform: translateY(6px) scale(.98); }
 }
 
+/* Popups com formulário: login (base.html) e troca de senha (account.html). */
+.form-dialog { width: 400px; max-width: calc(100vw - 2rem); margin: auto; border: none;
+               border-radius: 10px; padding: 1.5rem; box-shadow: 0 8px 32px rgba(0,0,0,.25); }
+.form-dialog::backdrop { background: rgba(26,32,44,.45); }
+.form-dialog[open] { animation: confirm-in .14s ease-out; }
+.auth-form h2 { font-size: 1.15rem; font-weight: 600; color: var(--ink-soft); margin-bottom: 1rem; }
+.auth-form label { margin-top: .85rem; }
+.auth-form input { width: 100%; height: 2.5rem; border: 1px solid #cbd5e0; border-radius: 6px;
+                   padding: .5rem .75rem; color: var(--ink-soft); background: var(--field-bg); }
+.auth-form input:focus { border-color: var(--accent); background: #fff; }
+.form-lede { font-size: .82rem; line-height: 1.5; color: var(--muted); margin: -.5rem 0 .25rem; }
+.form-error { margin-top: .9rem; padding: .5rem .7rem; border-radius: 6px; font-size: .85rem; line-height: 1.45;
+              background: #fff5f5; border: 1px solid #feb2b2; color: var(--danger-dark); }
+.auth-form .row { display: flex; justify-content: flex-end; gap: .75rem; margin-top: 1.25rem; }
+.auth-form .row button[type="submit"] { min-width: 8rem; }
+.form-switch { margin-top: 1rem; text-align: center; }
+.form-switch .btn-link { font-size: .85rem; }
+
+/* Sem login: no lugar do conteúdo da tela, o convite para entrar. */
+.login-gate { margin: auto; padding: 2rem 1.5rem; max-width: 460px; text-align: center; }
+.login-gate h1 { font-family: Charter, 'Sitka Text', Cambria, Georgia, serif; font-size: 1.5rem; font-weight: 600;
+                 color: var(--header-bg); margin-bottom: .6rem; }
+.login-gate p { font-size: .92rem; line-height: 1.6; color: var(--muted); margin-bottom: 1.4rem; }
+
 /* Esconde da tela, mas mantém acessível ao teclado e ao leitor de tela. */
 .visually-hidden { position: absolute; width: 1px; height: 1px; overflow: hidden;
                    clip: rect(0 0 0 0); clip-path: inset(50%); white-space: nowrap; }
@@ -121,6 +155,7 @@ button:disabled { background: var(--accent-pale); cursor: not-allowed; }
 @media (max-width: 760px) {
   .app-header { padding: 0 1rem; }
   .app-title { font-size: 1.1rem; }
+  .header-link { padding: .35rem .55rem; }
   .card { padding: 1rem; }
 
   .sidebar { flex: 0 0 52px; }

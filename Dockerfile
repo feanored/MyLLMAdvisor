@@ -1,6 +1,8 @@
 # Imagem do My LLM Advisor para o fly.io: o site (Flask via gunicorn), o
-# servidor do Chroma e o Ollama numa máquina só, rodando em CPU. Banco, PDFs
-# e modelos ficam no volume montado em /data (ver fly.toml e deploy/start.sh).
+# servidor do Chroma, o PostgreSQL (contas e conversas) e, se OLLAMA_HOST não
+# apontar para um Ollama externo, o Ollama em CPU, numa máquina só. Bancos,
+# PDFs e modelos ficam no volume montado em /data (ver fly.gpu.toml, fly.toml
+# e deploy/start.sh).
 
 # Só o binário e as bibliotecas de CPU do Ollama; as de GPU somam vários GB.
 FROM ollama/ollama:0.40.11 AS ollama
@@ -8,8 +10,14 @@ RUN rm -rf /usr/lib/ollama/cuda_* /usr/lib/ollama/rocm* /usr/lib/ollama/vulkan*
 
 FROM python:3.14-slim-trixie
 
-RUN apt-get update \
+# PostgreSQL 17 (o do Debian trixie, fixado: um 18 não abriria os dados do
+# volume), sem o cluster padrão que o pacote criaria fora do volume; o
+# deploy/start.sh cria o dele em /data/postgres.
+RUN mkdir -p /etc/postgresql-common/createcluster.d \
+ && echo "create_main_cluster = false" > /etc/postgresql-common/createcluster.d/no-main-cluster.conf \
+ && apt-get update \
  && apt-get install -y --no-install-recommends ca-certificates libgomp1 libstdc++6 libglib2.0-0 libgl1 \
+        postgresql-17 \
  && rm -rf /var/lib/apt/lists/*
 
 COPY --from=ollama /usr/bin/ollama /usr/bin/ollama

@@ -1,18 +1,20 @@
 // Página: Orientador (templates/orientador.html) — chat simplificado,
-// focado na collection padrão (rag_documentos), com help_mode: true (ver
+// focado na base de documentos do usuário (o servidor a escolhe pela conta
+// logada; HELP_COLLECTION só dá nome ao HTML baixado), com help_mode: true (ver
 // HELP_PROMPT em services/chat_service.py). Layout de chat: cada pergunta
 // vira um "turno" empilhado na thread, `conversationId` dá memória à
-// conversa (ver ConversationService no backend).
+// conversa, e as conversas ficam guardadas na conta do usuário (ver
+// ConversationService no backend).
 import { Api } from '../services/api.js';
 import { readSseStream } from '../services/sse.js';
 import { Timers } from '../services/timer.js';
 import { escapeHtml, parseJson } from '../services/text.js';
-import { decode, renderAnswerBox, restoreMath } from '../components/answer.js';
+import { decode, renderAnswerBox } from '../components/answer.js';
 import { downloadAnswer } from '../components/answer-export.js';
 import { renderKeywords } from '../components/keywords.js';
 import { appendOptions } from '../components/select.js';
 import { MultiSelect } from '../components/multiselect.js';
-import { confirmDelete } from '../components/confirm-dialog.js';
+import { confirmAction, confirmDelete } from '../components/confirm-dialog.js';
 
 const HELP_COLLECTION = 'rag_documentos';
 const FILTER_KEY = 'source';
@@ -51,14 +53,17 @@ function makeRequestId() {
 
 let conversationId = makeRequestId();
 
-// --- Conversas salvas (localStorage) --------------------------------------
-// Cada conversa é salva como o próprio HTML já renderizado da thread, não
-// como dados brutos: reabrir é só reinjetar esse HTML de volta. O histórico
-// real (ConversationService) mora em memória do processo Flask: some num
-// restart do servidor, mesmo com os turnos antigos ainda visíveis aqui.
-const STORAGE_INDEX_KEY = 'myllmadvisor_conversations';
-const STORAGE_CONV_PREFIX = 'myllmadvisor_conv_';
-const TITLE_MAX_LEN = 60;
+// --- Conversas guardadas na conta -----------------------------------------
+// Cada turno é gravado no servidor pelo próprio /ask (ver
+// ConversationService): a pergunta ao chegar, a resposta ao terminar — mesmo
+// que esta página seja fechada no meio. Aqui só se lista, reabre, exclui,
+// importa e exporta.
+const TITLE_MAX_LEN = 60;  // o mesmo CONVERSATION_TITLE_MAX_LEN de models/config.py
+
+// Barra lateral: [{id, title}], da mais recente para a mais antiga (/conversations).
+let conversations = [];
+// Conversa sendo carregada do servidor (ver switchConversation).
+let openingId = null;
 
 // Título = a primeira pergunta da conversa, truncada (igual todo chat faz).
 function truncateTitle(text) {
@@ -66,34 +71,31 @@ function truncateTitle(text) {
   return clean.length > TITLE_MAX_LEN ? clean.slice(0, TITLE_MAX_LEN).trim() + '…' : clean;
 }
 
-function loadIndex() {
+async function loadConversations() {
   try {
-    const list = JSON.parse(localStorage.getItem(STORAGE_INDEX_KEY) || '[]');
-    return Array.isArray(list) ? list : [];
-  } catch (e) {
-    return [];
-  }
+    const list = await Api.listConversations();
+    if (Array.isArray(list)) conversations = list;
+  } catch (e) { /* servidor fora do ar: fica a lista que já está na tela */ }
+  renderConversationsList();
 }
 
-function saveIndex(list) {
-  try {
-    localStorage.setItem(STORAGE_INDEX_KEY, JSON.stringify(list));
-  } catch (e) { /* storage indisponível/cheio: a conversa atual segue funcionando */ }
-}
-
-function loadConversation(id) {
-  try {
-    const raw = localStorage.getItem(STORAGE_CONV_PREFIX + id);
-    return raw ? JSON.parse(raw) : null;
-  } catch (e) {
-    return null;
-  }
+// A conversa vai para o topo da barra lateral já na primeira pergunta, sem
+// esperar a resposta (igual todo chat faz); loadConversations confirma depois.
+function showConversationOnTop(id, question) {
+  const entry = conversations.find(c => c.id === id) || { id, title: truncateTitle(question) };
+  conversations = [entry, ...conversations.filter(c => c.id !== id)];
+  renderConversationsList();
 }
 
 // --- Importar/exportar conversas (CSV) ------------------------------------
 // Uma linha por turno: conversation_id/title repetem por turno da mesma
-// conversa; turn_index reconstrói a ordem no import.
-const CSV_COLUMNS = ['conversation_id', 'title', 'turn_index', 'turn_id', 'html'];
+// conversa; turn_index reconstrói a ordem no import. As listas do turno
+// (keywords, figures, equations) vão em JSON.
+const CSV_COLUMNS = ['conversation_id', 'title', 'turn_index', 'turn_id', 'question', 'answer',
+                     'status', 'keywords', 'figures', 'equations'];
+// O import também aceita o CSV de antes das contas, com o HTML de cada turno
+// numa coluna "html" no lugar de question/answer (ver turnFromLegacyHtml).
+const CSV_REQUIRED = ['conversation_id', 'title', 'turn_index'];
 
 function csvEscape(value) {
   const str = String(value ?? '');
@@ -138,15 +140,22 @@ function parseCsv(text) {
   return rows;
 }
 
-function exportConversations() {
-  const list = loadIndex();
+async function exportConversations() {
+  let list = null;
+  try {
+    list = await Api.exportConversations();
+  } catch (e) { /* tratado abaixo */ }
+  if (!Array.isArray(list)) {
+    els.status.textContent = 'Não foi possível exportar as conversas.';
+    return;
+  }
   if (!list.length) return;
   let csv = csvRow(CSV_COLUMNS);
-  for (const { id, title } of list) {
-    const stored = loadConversation(id);
-    if (!stored || !Array.isArray(stored.turns)) continue;
-    stored.turns.forEach((turn, index) => {
-      csv += csvRow([id, title, index, turn.id, turn.html]);
+  for (const { id, title, turns } of list) {
+    turns.forEach((turn, index) => {
+      csv += csvRow([id, title, index, turn.id, turn.question, turn.answer, turn.status,
+                     JSON.stringify(turn.keywords || []), JSON.stringify(turn.figures || []),
+                     JSON.stringify(turn.equations || [])]);
     });
   }
   const blob = new Blob(['﻿', csv], { type: 'text/csv;charset=utf-8;' });
@@ -158,112 +167,194 @@ function exportConversations() {
   URL.revokeObjectURL(url);
 }
 
-function importConversationsFromCsv(text) {
+// Grava na conta as conversas lidas de um CSV (ou do localStorage antigo).
+// Devolve true se deu certo.
+async function saveImported(list) {
+  let result = null;
+  try {
+    result = await Api.importConversations(list);
+  } catch (e) { /* tratado abaixo */ }
+  if (!result || !result.ok) {
+    els.status.textContent = result?.error || 'Não foi possível importar as conversas.';
+    return false;
+  }
+  els.status.textContent = `${result.imported} conversa(s) importada(s).`;
+  await loadConversations();
+  return true;
+}
+
+async function importConversationsFromCsv(text) {
   const rows = parseCsv(text.replace(/^﻿/, ''));
   if (!rows.length) return;
-  const colIndex = CSV_COLUMNS.map(name => rows[0].indexOf(name));
-  if (colIndex.includes(-1)) {
+  const header = rows[0];
+  const col = Object.fromEntries([...CSV_COLUMNS, 'html'].map(name => [name, header.indexOf(name)]));
+  const legacy = col.html !== -1;
+  if (CSV_REQUIRED.some(name => col[name] === -1) || (!legacy && col.question === -1)) {
     els.status.textContent = 'Arquivo CSV inválido: colunas esperadas não encontradas.';
     return;
   }
-  const [idxConv, idxTitle, idxOrder, idxTurn, idxHtml] = colIndex;
+  const cell = (row, name) => (col[name] === -1 ? undefined : row[col[name]]);
 
   const byConversation = new Map();
   for (const row of rows.slice(1)) {
-    const id = row[idxConv];
+    const id = cell(row, 'conversation_id');
     if (!id) continue;
-    if (!byConversation.has(id)) byConversation.set(id, { title: row[idxTitle] || '', turns: [] });
-    byConversation.get(id).turns.push({ order: Number(row[idxOrder]) || 0, id: row[idxTurn], html: row[idxHtml] || '' });
+    if (!byConversation.has(id)) byConversation.set(id, { id, title: cell(row, 'title') || '', turns: [] });
+    const turn = legacy ? turnFromLegacyHtml(cell(row, 'html')) : {
+      question: cell(row, 'question'),
+      answer: cell(row, 'answer'),
+      status: cell(row, 'status'),
+      keywords: parseJson(cell(row, 'keywords'), []),
+      figures: parseJson(cell(row, 'figures'), []),
+      equations: parseJson(cell(row, 'equations'), [])
+    };
+    byConversation.get(id).turns.push({ order: Number(cell(row, 'turn_index')) || 0, ...turn });
   }
 
-  const importedIds = [];
-  for (const [id, conv] of byConversation) {
-    conv.turns.sort((a, b) => a.order - b.order);
-    const turns = conv.turns.map(({ id: turnId, html }) => ({ id: turnId, html }));
-    try {
-      localStorage.setItem(STORAGE_CONV_PREFIX + id, JSON.stringify({ turns }));
-      importedIds.push(id);
-    } catch (e) { /* storage cheio/indisponível: pula esta conversa */ }
-  }
-
-  const importedList = importedIds.map(id => ({ id, title: byConversation.get(id).title }));
-  const existingList = loadIndex().filter(c => !importedIds.includes(c.id));
-  saveIndex([...importedList, ...existingList]);
-  renderConversationsList();
-  els.status.textContent = `${importedIds.length} conversa(s) importada(s).`;
+  const list = [...byConversation.values()];
+  list.forEach(conv => conv.turns.sort((a, b) => a.order - b.order));
+  await saveImported(list);
 }
 
-// Turnos apagados pelo "✕" (ver wireDeleteButton): se a resposta ainda
-// estiver chegando, persistTurn é chamado de novo ao terminar — sem isso o
-// turno reapareceria sozinho no armazenamento.
-const deletedTurnIds = new Set();
+// --- Conversas de antes das contas -----------------------------------------
+// Antes, cada turno era guardado como o HTML já renderizado (no localStorage
+// do navegador e no CSV exportado). Para gravá-lo na conta, o HTML volta ao
+// texto cru da resposta, o caminho inverso de decode() em answer.js: negrito,
+// títulos, tabelas e fórmulas (do data-source dos encaixes) voltam ao
+// markdown/LaTeX; as figuras saem do texto e voltam pela menção "Figura N".
+const LEGACY_INDEX_KEY = 'myllmadvisor_conversations';
+const LEGACY_CONV_PREFIX = 'myllmadvisor_conv_';
 
-// Grava o outerHTML de UM turno (não a thread inteira) sob `id`, por
-// turnId (upsert) — não por `conversationId`, que pode já ter mudado se o
-// usuário trocar de conversa enquanto esta resposta ainda chega.
-function persistTurn(id, question, turn) {
-  if (deletedTurnIds.has(turn.turnId)) return;
-  const list = loadIndex();
-  const existing = list.find(c => c.id === id);
-  const title = existing ? existing.title : truncateTitle(question);
-  const stored = loadConversation(id) || { turns: [] };
-  const idx = stored.turns.findIndex(t => t.id === turn.turnId);
-  const entry = { id: turn.turnId, html: turn.root.outerHTML };
-  if (idx === -1) stored.turns.push(entry);
-  else stored.turns[idx] = entry;
+function markdownTable(table) {
+  const rows = [...table.querySelectorAll('tr')]
+    .map(tr => [...tr.children].map(cell => [...cell.childNodes].map(markdownOf).join('').trim()));
+  if (!rows.length) return '';
+  const line = cells => `| ${cells.join(' | ')} |`;
+  return [line(rows[0]), line(rows[0].map(() => '---')), ...rows.slice(1).map(line)].join('\n');
+}
+
+function markdownOf(node) {
+  if (node.nodeType === Node.TEXT_NODE) return node.textContent;
+  if (node.nodeType !== Node.ELEMENT_NODE) return '';
+  if (node.classList.contains('math-slot')) return node.dataset.source || node.textContent;
+  if (node.dataset.segType === 'figure') return '';
+  const inner = () => [...node.childNodes].map(markdownOf).join('');
+  switch (node.tagName) {
+    case 'BR': return '\n';
+    case 'B': case 'STRONG': return `**${inner()}**`;
+    case 'I': case 'EM': return `*${inner()}*`;
+    case 'H2': return `## ${inner()}\n`;
+    case 'H3': return `### ${inner()}\n`;
+    case 'HR': return '---';
+    case 'PRE': return '```' + node.textContent + '```';
+    case 'TABLE': return markdownTable(node);
+    case 'IMG': return '';
+    default: return inner();
+  }
+}
+
+function turnFromLegacyHtml(html) {
+  // <template>: o HTML só é analisado, sem carregar imagens nem rodar nada.
+  const tpl = document.createElement('template');
+  tpl.innerHTML = html || '';
+  const root = tpl.content;
+  const box = root.querySelector('.answer-box');
+  let answer = box ? markdownOf(box).trim() : '';
+  let status = 'done';
+  if (answer.startsWith('Erro: ')) {
+    status = 'error';
+    answer = answer.slice('Erro: '.length);
+  }
+  return {
+    question: root.querySelector('.turn-question-text')?.textContent || '',
+    answer,
+    status,
+    keywords: [...root.querySelectorAll('.keyword-chip')].map(el => el.textContent),
+    figures: box ? [...box.querySelectorAll('[data-seg-type="figure"]')]
+      .map(el => ({ path: el.dataset.figKey, caption: el.querySelector('.answer-figure-caption')?.textContent || '' }))
+      .filter(fig => fig.path) : [],
+    equations: []
+  };
+}
+
+function legacyIndex() {
   try {
-    localStorage.setItem(STORAGE_CONV_PREFIX + id, JSON.stringify(stored));
+    const list = JSON.parse(localStorage.getItem(LEGACY_INDEX_KEY) || '[]');
+    return Array.isArray(list) ? list : [];
   } catch (e) {
-    return;  // storage cheio/indisponível: a conversa atual não é afetada
+    return [];
   }
-  saveIndex([{ id, title }, ...list.filter(c => c.id !== id)]);
-  renderConversationsList();
 }
 
-// Remove UM turno (não a conversa inteira, ver deleteConversation).
-function removeTurn(id, turnId) {
-  const stored = loadConversation(id);
-  if (!stored || !Array.isArray(stored.turns)) return;
-  stored.turns = stored.turns.filter(t => t.id !== turnId);
+function legacyConversations() {
+  return legacyIndex().map(({ id, title }) => {
+    let stored = null;
+    try {
+      stored = JSON.parse(localStorage.getItem(LEGACY_CONV_PREFIX + id) || 'null');
+    } catch (e) { /* entrada corrompida: fica de fora */ }
+    const turns = Array.isArray(stored?.turns) ? stored.turns.map(t => turnFromLegacyHtml(t.html)) : [];
+    return { id, title, turns };
+  }).filter(conv => conv.turns.length);
+}
+
+function clearLegacyStorage() {
   try {
-    localStorage.setItem(STORAGE_CONV_PREFIX + id, JSON.stringify(stored));
-  } catch (e) { /* storage indisponível: a tela já foi atualizada */ }
+    legacyIndex().forEach(({ id }) => localStorage.removeItem(LEGACY_CONV_PREFIX + id));
+    localStorage.removeItem(LEGACY_INDEX_KEY);
+  } catch (e) { /* storage indisponível */ }
 }
 
-function deleteConversation(id) {
+// Conversas que ficaram no localStorage deste navegador: oferece levá-las
+// para a conta (e, levadas, apaga-as daqui). Recusou, pergunta de novo na
+// próxima vez que a página abrir.
+async function offerLegacyImport() {
+  const legacy = legacyConversations();
+  if (!legacy.length) return;
+  const ok = await confirmAction({
+    title: 'Importar conversas deste navegador?',
+    message: `Há ${legacy.length} conversa(s) salva(s) neste navegador, de antes das contas. ` +
+             'Importadas, elas passam a ficar na sua conta, disponíveis em qualquer navegador.',
+    confirmLabel: 'Importar'
+  });
+  if (ok && await saveImported(legacy)) clearLegacyStorage();
+}
+
+// --- Barra lateral ------------------------------------------------------------
+
+async function deleteConversation(id) {
   // A conversa ATIVA não pode ser excluída enquanto uma resposta está
   // sendo renderizada nela (ver setAsking).
   if (current.abortController && id === conversationId) return;
   try {
-    localStorage.removeItem(STORAGE_CONV_PREFIX + id);
-  } catch (e) { /* ignore */ }
-  saveIndex(loadIndex().filter(c => c.id !== id));
+    await Api.deleteConversation(id);
+  } catch (e) { /* loadConversations abaixo devolve a conversa à lista se ela não saiu */ }
+  conversations = conversations.filter(c => c.id !== id);
   if (id === conversationId) startNewConversation();
   else renderConversationsList();
+  loadConversations();
 }
 
 async function confirmDeleteConversation(id) {
   if (current.abortController && id === conversationId) return;  // ver deleteConversation
-  const entry = loadIndex().find(c => c.id === id);
+  const entry = conversations.find(c => c.id === id);
   const ok = await confirmDelete({
     title: 'Excluir conversa?',
     detail: entry?.title || '',
-    message: 'Todas as perguntas e respostas desta conversa são apagadas deste navegador. Não dá para desfazer.'
+    message: 'Todas as perguntas e respostas desta conversa são apagadas da sua conta. Não dá para desfazer.'
   });
   if (ok) deleteConversation(id);
 }
 
 function renderConversationsList() {
-  const list = loadIndex();
-  els.exportBtn.disabled = current.abortController ? true : !list.length;
-  if (!list.length) {
+  els.exportBtn.disabled = current.abortController ? true : !conversations.length;
+  if (!conversations.length) {
     els.conversationsList.innerHTML = '<span class="conversations-empty">Nenhuma conversa salva ainda.</span>';
     return;
   }
-  els.conversationsList.innerHTML = list.map(c => `
-    <div class="conversation-item${c.id === conversationId ? ' active' : ''}" data-id="${c.id}">
+  els.conversationsList.innerHTML = conversations.map(c => `
+    <div class="conversation-item${c.id === conversationId ? ' active' : ''}" data-id="${escapeHtml(c.id)}">
       <span class="conversation-title" title="${escapeHtml(c.title)}">${escapeHtml(c.title)}</span>
-      <button type="button" class="conversation-delete" data-id="${c.id}"
+      <button type="button" class="conversation-delete" data-id="${escapeHtml(c.id)}"
               title="Excluir conversa" aria-label="Excluir conversa">×</button>
     </div>
   `).join('');
@@ -272,24 +363,41 @@ function renderConversationsList() {
 function startNewConversation() {
   // Bloqueado enquanto uma resposta está sendo renderizada (ver setAsking).
   if (current.abortController) return;
+  openingId = null;
   conversationId = makeRequestId();
   byId('thread-inner').innerHTML = THREAD_HINT_HTML;
   els.threadHint = byId('thread-hint');
   renderConversationsList();
 }
 
-function switchConversation(id) {
+async function switchConversation(id) {
   if (id === conversationId) return;
   // Bloqueado enquanto uma resposta está sendo renderizada (ver setAsking).
   if (current.abortController) return;
-  const stored = loadConversation(id);
-  if (!stored || !Array.isArray(stored.turns)) return;  // entrada órfã (ex.: storage alterado por fora)
+  openingId = id;
+  els.status.textContent = 'Abrindo a conversa…';
+  let conversation = null;
+  try {
+    conversation = await Api.getConversation(id);
+  } catch (e) { /* tratado abaixo */ }
+  // Outra conversa (ou "Nova conversa") foi escolhida enquanto esta carregava.
+  if (openingId !== id || current.abortController) return;
+  openingId = null;
+  if (!Array.isArray(conversation?.turns)) {
+    els.status.textContent = conversation?.error || 'Não foi possível abrir a conversa.';
+    loadConversations();
+    return;
+  }
+  els.status.textContent = '';
   conversationId = id;
-  els.threadHint = null;
   const threadInner = byId('thread-inner');
-  threadInner.innerHTML = stored.turns.map(t => t.html).join('');
-  wireRestoredTurns();
-  restoreMath(threadInner);
+  if (conversation.turns.length) {
+    threadInner.replaceChildren(...conversation.turns.map(renderStoredTurn));
+    els.threadHint = null;
+  } else {
+    threadInner.innerHTML = THREAD_HINT_HTML;
+    els.threadHint = byId('thread-hint');
+  }
   scrollThreadToBottom();
   renderConversationsList();
 }
@@ -372,12 +480,10 @@ function selectedSources() {
 
 // --- Thread (turnos da conversa) ------------------------------------------------
 
-// Monta o bloco de um turno novo (pergunta + resposta) e devolve as
-// referências que `ask()` precisa pra preenchê-lo enquanto a resposta chega.
-function createTurn(question) {
-  // Aleatório, não sequencial: evita colidir com o id de um turno restaurado
-  // de uma conversa salva (ver persistTurn).
-  const turnId = makeRequestId();
+// Monta o bloco de um turno (pergunta + resposta) e devolve as referências
+// que `ask()` precisa pra preenchê-lo enquanto a resposta chega. `turnId`:
+// o id gravado no servidor, ao reabrir uma conversa; turno novo ganha um.
+function createTurn(question, turnId = makeRequestId()) {
   const timerId = `turn-answer-timer-${turnId}`;
 
   const root = document.createElement('div');
@@ -412,8 +518,22 @@ function createTurn(question) {
   };
 }
 
+// Turno de uma conversa reaberta, renderizado de novo a partir do que o
+// servidor guardou (texto cru da resposta + figuras/equações do RAG).
+function renderStoredTurn(stored) {
+  const turn = createTurn(stored.question, stored.id);
+  renderKeywords(turn.keywordsLine, stored.keywords);
+  if (stored.status === 'error') {
+    turn.answerBox.innerHTML = 'Erro: ' + decode(stored.answer, stored.figures);
+  } else {
+    renderAnswerBox(turn.answerBox, stored.answer, stored.figures, stored.equations);
+  }
+  wireTurnActions(turn.root);
+  return turn.root;
+}
+
 // Lê pergunta/resposta/palavras-chave direto do DOM do turno, então funciona
-// igual pra um turno novo e pra um restaurado (ver wireRestoredTurns).
+// igual pra um turno novo e pra um reaberto.
 function wireDownloadButton(turnRoot) {
   const downloadBtn = turnRoot.querySelector('.download-btn');
   const answerBox = turnRoot.querySelector('.answer-box');
@@ -427,13 +547,13 @@ function wireDownloadButton(turnRoot) {
   }));
 }
 
-// Tira o turno da tela, do armazenamento (ver removeTurn) e avisa o backend
-// pra esquecer o par pergunta/resposta (ver ConversationService.forget_turn).
-function wireDeleteButton(turnRoot, ownerConversationId) {
+// Tira o turno da tela e da conversa guardada, e com isso da memória das
+// próximas perguntas (ver ConversationService.delete_turn). Se a resposta
+// ainda estiver chegando, o servidor não o grava de volta ao terminar.
+function wireDeleteButton(turnRoot) {
   const deleteBtn = turnRoot.querySelector('.turn-delete-btn');
   if (!deleteBtn) return;
   deleteBtn.addEventListener('click', async () => {
-    const turnId = turnRoot.dataset.turnId;
     const question = turnRoot.querySelector('.turn-question-text')?.textContent || '';
     const ok = await confirmDelete({
       title: 'Excluir esta resposta?',
@@ -441,20 +561,14 @@ function wireDeleteButton(turnRoot, ownerConversationId) {
       message: 'A pergunta e a resposta saem da conversa, e o chat deixa de lembrar delas nas próximas perguntas.'
     });
     if (!ok || !turnRoot.isConnected) return;
-    deletedTurnIds.add(turnId);
     turnRoot.remove();
-    removeTurn(ownerConversationId, turnId);
-    Api.forgetTurn(ownerConversationId, question);
+    Api.forgetTurn(turnRoot.dataset.turnId);
   });
 }
 
-function wireTurnActions(turnRoot, ownerConversationId) {
+function wireTurnActions(turnRoot) {
   wireDownloadButton(turnRoot);
-  wireDeleteButton(turnRoot, ownerConversationId);
-}
-
-function wireRestoredTurns() {
-  byId('thread-inner').querySelectorAll('.turn').forEach(turnEl => wireTurnActions(turnEl, conversationId));
+  wireDeleteButton(turnRoot);
 }
 
 function scrollThreadToBottom() {
@@ -479,7 +593,7 @@ function setAsking(isAsking) {
   // Trava a barra lateral (ver guards em switchConversation/
   // deleteConversation/startNewConversation).
   els.newConversationBtn.disabled = isAsking;
-  els.exportBtn.disabled = isAsking || !loadIndex().length;
+  els.exportBtn.disabled = isAsking || !conversations.length;
   els.importBtn.disabled = isAsking;
   els.conversationsList.classList.toggle('busy', isAsking);
 }
@@ -513,10 +627,8 @@ async function ask() {
   const turn = createTurn(question);
   appendTurn(turn);
   turn.answerBox.innerHTML = LOADING_INDICATOR_HTML;
-  wireTurnActions(turn.root, askConversationId);
-  // Salva já na primeira pergunta: a conversa aparece na barra lateral desde
-  // o início, não só depois de a resposta terminar (igual todo chat faz).
-  persistTurn(askConversationId, question, turn);
+  wireTurnActions(turn.root);
+  showConversationOnTop(askConversationId, question);
 
   let answerBuf = '';
   let turnFigures = [];
@@ -556,7 +668,6 @@ async function ask() {
         renderAnswerBox(turn.answerBox, answerBuf, turnFigures, turnEquations);
       }
       scrollThreadToBottom();
-      persistTurn(askConversationId, question, turn);
     },
     error_msg: data => {
       globalTimers.stop('total');
@@ -564,20 +675,18 @@ async function ask() {
       turn.answerBox.innerHTML = 'Erro: ' + decode(data, turnFigures);
       setAsking(false);
       els.status.textContent = 'Erro.';
-      persistTurn(askConversationId, question, turn);
       return false;
     },
     cancelled: () => {
       finish('Cancelado.');
       if (!answerBuf.trim()) turn.answerBox.innerHTML = '';
-      persistTurn(askConversationId, question, turn);
       return false;
     }
   };
 
   const payload = {
     question, collection: HELP_COLLECTION, context: true, request_id: current.requestId,
-    help_mode: true, conversation_id: askConversationId, is_first_turn: isFirstTurn,
+    help_mode: true, conversation_id: askConversationId, turn_id: turn.turnId, is_first_turn: isFirstTurn,
     filter_key: FILTER_KEY, filter_value: filterValue
   };
   if (selectedModel) payload.model = selectedModel;
@@ -599,10 +708,12 @@ async function ask() {
       els.status.textContent = 'Erro.';
     }
     setAsking(false);
-    persistTurn(askConversationId, question, turn);
   } finally {
     current.abortController = null;
     current.requestId = null;
+    // Título e ordem como o servidor gravou (ou a conversa sai da lista, se
+    // nem a pergunta chegou a ser gravada).
+    loadConversations();
   }
 }
 
@@ -652,3 +763,4 @@ els.conversationsList.addEventListener('click', e => {
 updateAskBtnTitle();
 loadGroups();
 renderConversationsList();
+loadConversations().then(offerLegacyImport);

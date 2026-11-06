@@ -14,6 +14,10 @@ primary_region = "gru"
   CHROMA_HOST = "127.0.0.1"
   CHROMA_PORT = "8000"
   HF_HOME = "/data/huggingface"
+  # PostgreSQL (contas e conversas) na própria máquina, pelo socket Unix, com
+  # os dados no volume (ver deploy/start.sh). Valem também no `fly ssh
+  # console`, para o manage_users.py achar o banco.
+  DB_HOST = "/run/postgresql"
 
 [http_service]
   internal_port = 5001
@@ -27,8 +31,8 @@ primary_region = "gru"
   destination = "/data"
   initial_size = "10gb"
 
-# Sem modelos do Ollama na memória: só o site, o Chroma e o Docling (que
-# continua rodando aqui, em CPU, durante uma indexação).
+# Sem modelos do Ollama na memória: só o site, o Chroma, o PostgreSQL e o
+# Docling (que continua rodando aqui, em CPU, durante uma indexação).
 [[vm]]
   size = "performance-2x"
   memory = "8gb"

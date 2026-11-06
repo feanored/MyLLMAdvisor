@@ -1,0 +1,20 @@
+/* Minha conta (templates/account.html). Barra superior, menu lateral, paleta
+   e o popup de troca de senha (.form-dialog/.auth-form): ver layout.css. */
+.account-page { flex: 1 1 auto; overflow-y: auto; padding: 2rem 1rem; }
+.account-inner { width: 640px; max-width: 100%; margin: 0 auto; }
+.page-title { font-size: 1.4rem; font-weight: 600; color: var(--ink-soft); margin-bottom: 1.25rem; }
+
+.account-info { display: grid; grid-template-columns: max-content 1fr; gap: .6rem 1.5rem; font-size: .95rem; }
+.account-info dt { color: var(--muted); font-weight: 600; font-size: .85rem; align-self: center; }
+.account-info dd { color: var(--ink-soft); overflow-wrap: anywhere; }
+
+.account-actions { display: flex; flex-wrap: wrap; gap: .75rem; margin-top: 1.5rem;
+                   padding-top: 1.25rem; border-top: 1px solid var(--line-soft); }
+.account-status { margin-top: .75rem; font-size: .85rem; color: var(--accent); }
+.account-status:empty { display: none; }
+
+@media (max-width: 760px) {
+  .account-page { padding: 1.25rem .75rem; }
+  .account-info { grid-template-columns: 1fr; gap: .2rem; }
+  .account-info dd { margin-bottom: .6rem; }
+}

@@ -14,6 +14,8 @@ primary_region = "gru"
   DEFAULT_MODEL = "qwen3:8b"
   OLLAMA_PULL_MODELS = "bge-m3 qwen3:8b qwen3.5 glm-ocr"
   HF_HOME = "/data/huggingface"
+  # PostgreSQL (contas e conversas) na própria máquina, ver fly.gpu.toml.
+  DB_HOST = "/run/postgresql"
 
 [http_service]
   internal_port = 5001

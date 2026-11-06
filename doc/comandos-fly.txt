@@ -1,0 +1,59 @@
+MY LLM ADVISOR - convite, 2 usuarios e migracao da base (fly.io)
+=================================================================
+
+1) DEFINIR O CODIGO DE CONVITE E PUBLICAR O CODIGO NOVO
+   (no PowerShell, na pasta do repositorio)
+
+   fly secrets set --app myllmadvisor-gpu INVITE_CODE="seu-codigo" --stage
+   fly secrets unset --app myllmadvisor-gpu AUTH_PASSWORD --stage
+   fly deploy --config fly.gpu.toml --ha=false
+
+   --stage so guarda os secrets; o deploy aplica tudo de uma vez.
+   AUTH_PASSWORD era a senha antiga do site e nao e mais usada.
+   Na primeira subida, a maquina cria o Postgres e as tabelas sozinha.
+
+
+2) CRIAR OS 2 USUARIOS
+
+   Jeito A - pelo site:
+     abra https://myllmadvisor-gpu.fly.dev
+     clique em "Recebeu um convite? Criar conta"
+     preencha e-mail, senha e o codigo de convite (uma vez por usuario)
+
+   Jeito B - pela linha de comando (nao precisa do codigo):
+
+     fly ssh console --app myllmadvisor-gpu
+
+     ja dentro da maquina:
+       cd /app
+       python manage_users.py add pessoa1@exemplo.com
+       python manage_users.py add pessoa2@exemplo.com
+       python manage_users.py list
+
+     cada "add" pede a senha duas vezes.
+
+
+3) MIGRAR A BASE rag_documentos PARA UM DELES
+   (na mesma sessao do fly ssh console)
+
+       python manage_users.py adopt-documents pessoa1@exemplo.com
+       exit
+
+   Copia os trechos (sem reindexar), move PDFs e figuras para as pastas
+   da pessoa1 e apaga a rag_documentos. So a pessoa1 ve esses PDFs;
+   a pessoa2 comeca com a base vazia.
+
+
+OBS: para o chat responder, o Ollama do PC precisa enxergar os modelos
+(variavel OLLAMA_MODELS=D:\Documentos\Ollama). Para criar contas e migrar
+a base, ele nao e necessario.
+
+
+MESMA COISA LOCALMENTE (com o Postgres e o "chroma run" no ar)
+--------------------------------------------------------------
+
+   $env:INVITE_CODE = "seu-codigo"
+   python manage_users.py add pessoa1@exemplo.com
+   python manage_users.py add pessoa2@exemplo.com
+   python manage_users.py adopt-documents pessoa1@exemplo.com
+   python rag_web.py

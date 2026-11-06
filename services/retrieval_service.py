@@ -6,7 +6,7 @@ utilitários de metadados/figuras usados pelo chat e pelo `/rag-view`.
 import re
 from pathlib import Path
 
-from factories import ChromaClientFactory, ChromaCollectionFactory
+from factories import ChromaCollectionFactory
 from models import (
     FILTER_FIELDS_METADATA_KEY,
     KEYWORD_MAX_DISTANCE,
@@ -518,11 +518,3 @@ class RetrievalService:
             if row["text"]:
                 blocks.append(f"### {identifier}\n{row['text']}")
         return "\n\n".join(blocks)
-
-    @staticmethod
-    def list_collections():
-        try:
-            cols = ChromaClientFactory.create().list_collections()
-            return sorted(c.name for c in cols)
-        except Exception:
-            return ["No collection found!"]

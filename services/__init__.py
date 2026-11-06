@@ -1,17 +1,22 @@
 """Services: regras de negócio do sistema RAG web — extração de
-palavras-chave, recuperação de contexto, memória de conversa, orquestração
-do chat, validação de imagens locais e indexação dos PDFs enviados.
+palavras-chave, recuperação de contexto, contas e login, conversas
+guardadas, documentos por usuário, orquestração do chat, validação de
+imagens locais e indexação dos PDFs enviados.
 """
+from .user_storage import UserStorage
 from .keyword_service import KeywordService
 from .retrieval_service import RetrievalService
+from .auth_service import AuthService
 from .conversation_service import ConversationService
 from .chat_service import ChatService
 from .image_service import LocalImageService
 from .indexing_service import IndexingService
 
 __all__ = [
+    "UserStorage",
     "KeywordService",
     "RetrievalService",
+    "AuthService",
     "ConversationService",
     "ChatService",
     "LocalImageService",

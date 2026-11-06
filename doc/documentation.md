@@ -14,6 +14,15 @@ decisão de implementação. Para a visão geral e o início rápido, veja o
   - [Criar ambiente Python 3.14](#criar-ambiente-python-314)
   - [Modelos do Ollama](#modelos-do-ollama)
 - [Subindo o ambiente](#subindo-o-ambiente)
+- [Contas de usuário e banco de dados](#contas-de-usuário-e-banco-de-dados)
+  - [Login, cadastro e Minha conta](#login-cadastro-e-minha-conta)
+  - [Segurança](#segurança)
+  - [PDFs de cada usuário](#pdfs-de-cada-usuário)
+  - [Tabelas (db/02_schema.sql)](#tabelas-db02_schemasql)
+  - [Configuração (models/config.py)](#configuração-modelsconfigpy)
+  - [Banco local](#banco-local)
+  - [Administrar contas (manage_users.py)](#administrar-contas-manage_userspy)
+  - [Conversas de antes das contas](#conversas-de-antes-das-contas)
 - [Usando rag_papers.py (artigos e livros em PDF)](#usando-rag_paperspy-artigos-e-livros-em-pdf)
   - [Equações em LaTeX](#equações-em-latex)
 - [Usando rag_web.py (interface web)](#usando-rag_webpy-interface-web)
@@ -27,7 +36,7 @@ decisão de implementação. Para a visão geral e o início rápido, veja o
 - [Deploy no fly.io](#deploy-no-flyio)
   - [Ollama no PC: Windows com GPU AMD (deploy/pc-gpu/)](#ollama-no-pc-windows-com-gpu-amd-deploypc-gpu)
   - [App no Fly](#app-no-fly)
-  - [Trocar a senha e o token](#trocar-a-senha-e-o-token)
+  - [Trocar senhas, o convite e o token](#trocar-senhas-o-convite-e-o-token)
   - [Alternativa: tudo em CPU (fly.toml)](#alternativa-tudo-em-cpu-flytoml)
 - [Convenção de nomes de collections](#convenção-de-nomes-de-collections)
 - [Administrar bases](#administrar-bases)
@@ -37,10 +46,13 @@ decisão de implementação. Para a visão geral e o início rápido, veja o
 - `rag_papers.py` — indexa **PDFs de artigos científicos e livros** como texto estruturado (Docling), com extração e descrição de figuras e **equações convertidas para LaTeX** (ver "Equações em LaTeX"). Usado pela linha de comando e, por baixo, pela tela de envio de PDFs.
 - `rag_web.py` — aplicação Flask (**controller**) com a interface web. Só rotas Flask, formatação de request/response e qual template renderizar — nenhuma regra de negócio.
 - `templates/` — as telas (Jinja), todas herdando o mesmo layout (`base.html`: barra superior + menu lateral):
-  - `orientador.html` — **Orientador** (raiz `/`): o chat sobre os artigos e livros indexados na collection `rag_documentos`;
-  - `upload.html` — **Enviar PDFs** (`/upload`): envio de PDFs pelo navegador e acompanhamento da indexação.
+  - `orientador.html` — **Orientador** (raiz `/`): o chat sobre os artigos e livros da base do usuário;
+  - `upload.html` — **Enviar PDFs** (`/upload`): envio de PDFs pelo navegador e acompanhamento da indexação;
+  - `account.html` — **Minha conta** (`/account`, link no canto da barra superior): e-mail e troca de senha.
 - `static/rag_view.html` — consulta bruta às bases (`/rag-view`, sem LLM): ferramenta de administração, sem link no menu.
-- `documentos/` — PDFs enviados pela tela `/upload` (`UPLOAD_DIR`), criada no primeiro envio.
+- `db/` — SQLs do PostgreSQL (contas, sessões de login e conversas): `01_create_database.sql` cria o usuário e o banco, `02_schema.sql` as tabelas (ver "Contas de usuário e banco de dados").
+- `manage_users.py` — administração das contas pela linha de comando (listar, criar, redefinir senha, apagar).
+- `documentos/` — PDFs enviados pela tela `/upload` (`UPLOAD_DIR`), uma subpasta por usuário (`u<id>`), criada no primeiro envio.
 - `.chromadb/` — pasta local do ChromaDB, criada pelos indexadores (collections e figuras extraídas dos PDFs).
 
 ### Organização interna de `rag_web.py` (MVC + factory + service)
@@ -55,14 +67,17 @@ O servidor web é dividido em camadas, cada uma num pacote/módulo próprio:
 │   ├── config.py          # Model: constantes e configuração
 │   └── metadata_fields.py # cache de metadata p/ filtros — compartilhado com rag_papers.py
 ├── factories/
-│   ├── chroma_factory.py # ChromaClientFactory, ChromaCollectionFactory
-│   └── ollama_factory.py # OllamaClientFactory
+│   ├── chroma_factory.py   # ChromaClientFactory, ChromaCollectionFactory
+│   ├── ollama_factory.py   # OllamaClientFactory
+│   └── postgres_factory.py # PostgresPoolFactory
 └── services/
     ├── keyword_service.py      # KeywordService
     ├── retrieval_service.py    # RetrievalService
+    ├── auth_service.py         # AuthService
     ├── conversation_service.py # ConversationService
     ├── chat_service.py         # ChatService
     ├── image_service.py        # LocalImageService
+    ├── user_storage.py         # UserStorage
     └── indexing_service.py     # IndexingService
 ```
 
@@ -70,14 +85,16 @@ O servidor web é dividido em camadas, cada uma num pacote/módulo próprio:
 |---|---|---|
 | **Controller** | `rag_web.py` | Rotas Flask: lê request, chama o service certo, formata a resposta (JSON, SSE ou template). Nenhuma regra de negócio. |
 | **View** | `templates/` | Marcação das telas; `base.html` tem a barra superior e o menu lateral comuns (ver "Layout comum das telas"). |
-| **Model** | `models/` | Constantes e configuração (modelos padrão, limiares de distância, parâmetros da busca por palavras-chave, stopwords, diretórios de imagem e de upload, documentos do Orientador, links do menu, endereço do Chroma e senha de acesso, lidos de variáveis de ambiente). |
-| **Factory** | `factories/` | Criação dos objetos complexos: `ChromaClientFactory`/`ChromaCollectionFactory` (client e collection do Chroma, escolhendo a embedding function certa por "dono") e `OllamaClientFactory` (client de chat). |
+| **Model** | `models/` | Constantes e configuração (modelos padrão, limiares de distância, parâmetros da busca por palavras-chave, stopwords, diretórios de imagem e de upload, documentos do Orientador, links do menu, endereço do Chroma, conexão com o PostgreSQL e regras de login, lidos de variáveis de ambiente). |
+| **Factory** | `factories/` | Criação dos objetos complexos: `ChromaClientFactory`/`ChromaCollectionFactory` (client e collection do Chroma, escolhendo a embedding function certa por "dono"), `OllamaClientFactory` (client de chat) e `PostgresPoolFactory` (pool de conexões com o PostgreSQL). |
 | **Service** | `services/keyword_service.py` | `KeywordService` — extração de palavras-chave da pergunta (stopwords, fusão de números com a palavra à esquerda). |
 | **Service** | `services/retrieval_service.py` | `RetrievalService` — busca vetorial (frase inteira e/ou palavras-chave), montagem dos trechos (rows), metadados de filtro, figuras, equações, listagem de collections. |
-| **Service** | `services/conversation_service.py` | `ConversationService` — memória de conversa do Orientador (histórico de pergunta/resposta por `conversation_id`, até `HELP_MEMORY_MAX_TURNS` turnos). |
+| **Service** | `services/auth_service.py` | `AuthService` — contas, hash das senhas (argon2id), sessões de login, cadastro com convite e limite de tentativas erradas. |
+| **Service** | `services/conversation_service.py` | `ConversationService` — conversas do Orientador guardadas no PostgreSQL por usuário: grava cada turno, devolve a memória da conversa (até `HELP_MEMORY_MAX_TURNS` turnos), lista, reabre, exclui, exporta e importa. |
 | **Service** | `services/chat_service.py` | `ChatService` — orquestra uma pergunta: monta o prompt certo por "dono" da collection, conversa com o modelo em streaming (incluindo o histórico da conversa, se houver) e mantém o registro de cancelamento das perguntas em andamento. |
-| **Service** | `services/image_service.py` | `LocalImageService` — valida um caminho de imagem local contra os diretórios permitidos antes de servi-lo. |
-| **Service** | `services/indexing_service.py` | `IndexingService` — recebe os PDFs da tela `/upload`, grava em `UPLOAD_DIR` e indexa um por vez em segundo plano (ver "`/upload` — Enviar PDFs"). |
+| **Service** | `services/image_service.py` | `LocalImageService` — acha a figura pedida na pasta de figuras do usuário logado (só pelo nome do arquivo) antes de servi-la. |
+| **Service** | `services/user_storage.py` | `UserStorage` — onde ficam os documentos de cada usuário: a collection dele no Chroma, a pasta dos PDFs e a das figuras (ver "PDFs de cada usuário"). |
+| **Service** | `services/indexing_service.py` | `IndexingService` — recebe os PDFs da tela `/upload`, grava na pasta do usuário e indexa um por vez em segundo plano na base dele (ver "`/upload` — Enviar PDFs"); passa a base sem dono a uma conta (`adopt_collection`). |
 
 Cada pacote reexporta sua API pública no `__init__.py` (ex.: `from services
 import ChatService`), então o import não depende de saber em qual arquivo
@@ -94,20 +111,25 @@ static/
 ├── layout.css   # barra superior, menu lateral, paleta (variáveis CSS) e botões — comum a todas as telas
 ├── rag_help.css # Orientador (chat)
 ├── upload.css   # Enviar PDFs
+├── account.css  # Minha conta
 └── js/
     ├── services/    # sem DOM de página: api.js (todas as chamadas HTTP), sse.js (leitura do stream de /ask),
     │                # timer.js (cronômetros), text.js (escape/imagens locais), download.js (arquivo para baixar)
     ├── components/  # widgets reutilizáveis: select.js, keywords.js, multiselect.js (combo de
     │                # documentos do Orientador), answer.js (markdown/fórmulas/figuras/equações
-    │                # da resposta), answer-export.js (HTML da resposta), sidebar.js (menu em tela estreita)
+    │                # da resposta), answer-export.js (HTML da resposta), sidebar.js (menu em tela estreita),
+    │                # confirm-dialog.js (confirmações), login-dialog.js (popup de login)
     └── pages/       # controladores: rag-help.js (Orientador), upload.js (Enviar PDFs),
-                     # rag-view.js (consulta bruta)
+                     # account.js (Minha conta), rag-view.js (consulta bruta)
 ```
 
 ### Layout comum das telas
 
 Toda tela estende `templates/base.html`, que desenha a barra superior ("My
-LLM Advisor", link para o Orientador) e o menu lateral. O menu tem duas
+LLM Advisor", link para o Orientador; no canto, **Entrar** ou **Minha
+conta**) e o menu lateral. Sem login, nenhuma tela mostra o seu conteúdo nem
+carrega os seus scripts: no lugar entram o convite para entrar e o popup de
+login (ver "Contas de usuário e banco de dados"). O menu tem duas
 partes: em cima, o conteúdo da própria tela (bloco `sidebar`: a lista de
 conversas no Orientador, os documentos da base no Enviar PDFs); embaixo, fixa,
 a navegação entre telas, montada a partir de `NAV_ITEMS` em
@@ -148,6 +170,7 @@ caneta-tinteiro (`--accent`) e fundo branco-papel. O favicon ("MLA") está em
 
 - Python 3.14 (recomendado) + ambiente virtual.
 - [Ollama](https://ollama.com/) rodando localmente (ou acessível na rede), com os modelos necessários já baixados (`ollama pull <modelo>`).
+- [PostgreSQL](https://www.postgresql.org/) (17 recomendado), local ou acessível na rede, para as contas e as conversas do `rag_web.py` (ver "Contas de usuário e banco de dados"). O `rag_papers.py` de linha de comando não precisa dele.
 - Nenhuma API paga: indexação, embeddings, OCR de fórmulas, descrição de figuras e chat rodam todos localmente via Ollama.
 
 ### Criar ambiente Python 3.14
@@ -158,7 +181,7 @@ Windows PowerShell:
 python -m venv .venv
 .\.venv\Scripts\Activate.ps1
 python -m pip install --upgrade pip
-pip install flask chromadb ollama numpy docling
+pip install flask chromadb ollama numpy docling "psycopg[binary]" psycopg-pool argon2-cffi
 ```
 
 Linux/macOS:
@@ -167,7 +190,7 @@ Linux/macOS:
 python3 -m venv .venv
 source .venv/bin/activate
 python -m pip install --upgrade pip
-pip install flask chromadb ollama numpy docling
+pip install flask chromadb ollama numpy docling "psycopg[binary]" psycopg-pool argon2-cffi
 ```
 
 O que cada pacote faz no projeto (só os importados diretamente pelo código —
@@ -180,6 +203,8 @@ o resto vem como dependência deles):
 | `ollama` | todos | embeddings, chat, descrição de figuras e OCR de fórmulas |
 | `numpy` | `rag_papers.py` | normalização dos embeddings (distância cosseno) |
 | `docling` | `rag_papers.py` (e a tela `/upload`) | conversão dos PDFs, chunking (`HybridChunker`) e detecção de fórmulas; traz junto o `docling-core` e o `pypdfium2` (recorte das fórmulas) |
+| `psycopg[binary]`, `psycopg-pool` | `rag_web.py`, `manage_users.py` | conexão com o PostgreSQL (driver psycopg 3, com a libpq embutida) e o pool de conexões |
+| `argon2-cffi` | `rag_web.py`, `manage_users.py` | hash das senhas (argon2id) |
 
 ### Modelos do Ollama
 
@@ -226,14 +251,213 @@ Passo a passo juntando as peças das seções acima, na ordem certa:
    chroma run --path ./.chromadb --port 8000
    ```
    (o executável `chroma` já vem instalado junto com o pacote `chromadb` do venv, em `.venv/Scripts/chroma.exe` no Windows ou `.venv/bin/chroma` no Linux/macOS; a pasta `.chromadb` é criada se não existir.)
-4. **`rag_web.py`** — com o servidor do passo 3 já no ar, em outro terminal:
+4. **PostgreSQL** — um servidor no ar com o banco e as tabelas criados pelos SQLs de `db/`, uma vez só (ver "Banco local" em "Contas de usuário e banco de dados").
+5. **`rag_web.py`** — com os servidores dos passos 3 e 4 já no ar, em outro terminal:
    ```bash
    python rag_web.py
    ```
-   Abre em `http://0.0.0.0:5001`.
-5. **Indexar os documentos** — pela tela **Enviar PDFs** (`/upload`, link no rodapé do menu lateral), ou pela linha de comando (`python rag_papers.py index <pasta_com_pdfs>`, ver abaixo).
+   Abre em `http://0.0.0.0:5001`. Para criar a sua conta pela tela de login, defina antes um código de convite (`$env:INVITE_CODE = "um-codigo"` no PowerShell, `export INVITE_CODE=um-codigo` no Linux/macOS), ou crie-a com o `manage_users.py`.
+6. **Indexar os documentos** — pela tela **Enviar PDFs** (`/upload`, link no rodapé do menu lateral), ou pela linha de comando (`python rag_papers.py index <pasta_com_pdfs>`, ver abaixo).
 
 > Ordem importa: `rag_web.py` só enxerga as collections se o `chroma run` do passo 3 estiver de pé **e** apontando pra pasta `.chromadb` certa — servidor apontando pra pasta errada (ou não rodando) faz o Orientador ficar sem documentos e a indexação pelo `/upload` falhar.
+
+## Contas de usuário e banco de dados
+
+Cada pessoa entra com a sua conta (e-mail e senha) e vê só as suas
+conversas e os seus PDFs, em qualquer navegador. Contas, sessões de login e
+conversas ficam num PostgreSQL; cada conta tem também a sua própria base de
+documentos no Chroma (ver "PDFs de cada usuário").
+
+### Login, cadastro e Minha conta
+
+- **Sem login**, toda tela abre com o popup de login por cima e, no lugar
+  do conteúdo, um convite para entrar; o resto do site responde 401. No
+  canto da barra superior, o link é **Entrar**; depois do login, **Minha
+  conta**.
+- **Criar conta** só pela tela de login com um **código de convite**: o
+  valor de `INVITE_CODE` (no deploy, um secret do Fly). Sem ele, o link
+  "Recebeu um convite? Criar conta" nem aparece, e contas só nascem pelo
+  `manage_users.py`. Quem tem conta usa a GPU do Ollama, então passe o
+  código só para quem deve usar.
+- **Minha conta** (`/account`) mostra o e-mail e a data de criação, com os
+  botões **Alterar senha** (um popup que pede a senha atual e a nova duas
+  vezes; os outros navegadores logados na conta saem e pedem a senha nova) e
+  **Sair**.
+- O login vale por `SESSION_DAYS` (30 dias). Se ele vencer (ou cair por uma
+  troca de senha em outro navegador) com a tela aberta, a próxima ação
+  recarrega a página, que pede o login de novo (`checkSession` em
+  `static/js/services/api.js`).
+
+### Segurança
+
+- **Senhas**: hash **argon2id** (`argon2-cffi`, com os parâmetros
+  recomendados do RFC 9106: 64 MiB de memória, 3 iterações, 4 vias), sal
+  aleatório por senha, tudo gravado junto no próprio hash. Se a biblioteca
+  subir os parâmetros numa versão nova, o hash é refeito no login seguinte.
+  A senha tem de `PASSWORD_MIN_LEN` (10) a `PASSWORD_MAX_LEN` (256)
+  caracteres e não pode ser o próprio e-mail.
+- **Sessões**: o cookie `advisor_session` leva um token aleatório de 256
+  bits, `HttpOnly` (o JavaScript não o lê), `SameSite=Lax` e, com HTTPS,
+  `Secure` (atrás do proxy do Fly, o `ProxyFix` informa o HTTPS ao Flask). O
+  banco guarda só o SHA-256 do token: nem quem lê a tabela `sessions`
+  consegue se passar por alguém.
+- **Tentativas erradas**: `LOGIN_MAX_FAILURES` (5) erros em
+  `LOGIN_LOCKOUT_MINUTES` (15 minutos) bloqueiam o e-mail até a janela
+  passar; o mesmo IP tem o triplo de tentativas, valendo também para
+  códigos de convite errados. E-mail sem conta e senha errada dão a mesma
+  mensagem, no mesmo tempo de resposta. A contagem fica na memória do
+  processo (o gunicorn roda um só) e zera num restart.
+- **Requisições de outros sites**: além do `SameSite`, todo POST com
+  `Origin` de outro site é recusado com 403 (`_same_origin` em
+  `rag_web.py`).
+- **Isolamento**: toda consulta de conversa filtra pelo dono; a conversa de
+  outra conta é tratada como inexistente, até para quem souber o id. Os
+  PDFs também: ver "PDFs de cada usuário".
+- **Banco fora do ar**: o site responde 503 com um aviso, em vez de um erro
+  cru, e volta sozinho quando o banco volta.
+
+### PDFs de cada usuário
+
+Os PDFs continuam todos na mesma máquina, mas separados por conta
+(`services/user_storage.py`):
+
+| O quê | Onde (conta de id 3) |
+|---|---|
+| base no Chroma (trechos, figuras e equações indexados) | collection `rag_documentos_u3` |
+| PDFs enviados | `documentos/u3/` |
+| imagens das figuras | `.chromadb/figures/u3/` |
+
+O servidor sempre escolhe a base pela conta logada, nunca por um nome vindo
+do navegador: o `collection` que o front-end mande para `/ask`, `/rag-query`
+ou `/collection-metadata` é ignorado, e `/collections` lista só a base da
+conta. Assim, uma conta não consulta, não lista, não exclui e não pergunta
+ao chat sobre os PDFs de outra, e o `/local-image` só serve imagens da pasta
+de figuras dela (procuradas só pelo nome do arquivo, então nem um `../` no
+caminho sai da pasta). Duas contas podem ter PDFs de mesmo nome, cada uma
+com o seu.
+
+A fila de indexação é uma só para todas as contas (um PDF por vez, na ordem
+de chegada), mas cada conta só vê os próprios envios na lista "Indexação".
+
+**Base sem dono.** A collection `rag_documentos` (a do `rag_papers.py index`
+de linha de comando, e a base única de antes das contas) não aparece para
+ninguém. Para passá-la a uma conta, com o servidor do Chroma no ar:
+
+```bash
+python manage_users.py adopt-documents pessoa@exemplo.com
+```
+
+Os trechos são copiados com os embeddings já calculados (nada é
+reindexado), as imagens das figuras e os PDFs vão para as pastas da conta,
+um PDF de mesmo nome que a conta já tenha é substituído, e só no fim a base
+sem dono é apagada. Respostas antigas que citam uma figura pelo caminho de
+antes continuam mostrando a imagem para essa conta.
+
+### Tabelas (`db/02_schema.sql`)
+
+| Tabela | Uma linha por | Colunas principais |
+|---|---|---|
+| `users` | conta | `email` (único, minúsculo), `password_hash`, `created_at`, `password_changed_at` |
+| `sessions` | login aberto (navegador) | `token_hash` (SHA-256 do token do cookie), `user_id`, `expires_at` |
+| `conversations` | conversa do Orientador | `id` (UUID gerado pelo navegador), `user_id`, `title` (1ª pergunta truncada em `CONVERSATION_TITLE_MAX_LEN`), `updated_at` (ordem da barra lateral) |
+| `turns` | pergunta e resposta | `conversation_id`, `question`, `answer` (texto cru do modelo: markdown + LaTeX), `status` (`pending`, `done`, `cancelled`, `error`), `keywords`, `figures`, `equations` |
+
+Cada tabela tem chave simples e todo atributo depende só dela (2ª forma
+normal, e também 3ª): o título é da conversa, não do turno; o e-mail é do
+usuário, não da conversa. As listas de um turno (palavras-chave, figuras e
+equações recuperadas do RAG) só existem junto com ele e só são lidas com
+ele, então ficam no próprio turno, como `text[]` e `jsonb`. Apagar uma
+conta apaga as sessões, as conversas e os turnos dela (`ON DELETE CASCADE`).
+
+A resposta é guardada como texto cru, não como HTML: é ela que volta como
+memória da conversa nas próximas perguntas, e a tela a renderiza de novo ao
+reabrir a conversa, com as mesmas figuras e equações.
+
+### Configuração (`models/config.py`)
+
+| Variável | Padrão | Para quê |
+|---|---|---|
+| `DB_HOST` | `localhost` | servidor do PostgreSQL (ou a pasta do socket Unix, ex.: `/run/postgresql`) |
+| `DB_PORT` | `5432` | porta |
+| `DB_NAME` | `myllmadvisor` | banco |
+| `DB_USER` | `advisor` | usuário |
+| `DB_PASSWORD` | `advisor` | senha (vazia = nenhuma) |
+| `DATABASE_URL` | vazia | se definida (`postgresql://usuario:senha@host:5432/banco`), vale no lugar de todos os `DB_*` |
+| `INVITE_CODE` | vazio | código de convite para criar conta pela tela de login; vazio desliga o cadastro |
+
+Todas vêm de variáveis de ambiente de mesmo nome; os padrões batem com o
+que o `db/01_create_database.sql` cria. Também em `models/config.py`, sem
+variável de ambiente: `SESSION_DAYS`, `PASSWORD_MIN_LEN`,
+`PASSWORD_MAX_LEN`, `LOGIN_MAX_FAILURES`, `LOGIN_LOCKOUT_MINUTES`,
+`DB_POOL_MAX_SIZE` e `CONVERSATION_TITLE_MAX_LEN`.
+
+### Banco local
+
+Os dois SQLs de `db/` montam tudo num PostgreSQL novo e podem rodar de novo
+sem estragar nada (só criam o que falta): `01_create_database.sql`, como
+superusuário, cria o usuário `advisor` (senha `advisor`) e o banco
+`myllmadvisor`; `02_schema.sql`, já como `advisor`, cria as tabelas.
+
+**Com Docker** (o mais rápido, sem instalar o PostgreSQL):
+
+```powershell
+docker run -d --name advisor-pg -e POSTGRES_PASSWORD=postgres -p 5432:5432 `
+    -v advisor-pg:/var/lib/postgresql/data postgres:17
+docker cp db advisor-pg:/db
+docker exec advisor-pg psql -U postgres -f /db/01_create_database.sql
+docker exec advisor-pg psql -U advisor -d myllmadvisor -f /db/02_schema.sql
+```
+
+O volume `advisor-pg` guarda os dados; depois, basta `docker start
+advisor-pg` para subir o banco de novo.
+
+**Com o PostgreSQL instalado** (instalador do site no Windows,
+`apt install postgresql` no Linux):
+
+```bash
+psql -h localhost -U postgres -f db/01_create_database.sql
+psql -h localhost -U advisor -d myllmadvisor -f db/02_schema.sql
+```
+
+Outro usuário, senha ou nome de banco: passe-os ao primeiro SQL
+(`-v db_user=... -v db_password=... -v db_name=...`) e defina as mesmas
+variáveis `DB_*` antes de subir o `rag_web.py`.
+
+Os SQLs só criam o que ainda não existe: uma mudança futura numa tabela que
+já existe precisa do seu próprio `ALTER TABLE`.
+
+### Administrar contas (`manage_users.py`)
+
+Pela linha de comando, no mesmo banco do site (mesmas variáveis `DB_*`).
+Serve para criar contas sem convite, para redefinir a senha de quem a
+esqueceu (o site não manda e-mail) e para passar a base sem dono a uma conta:
+
+```bash
+python manage_users.py list                               # contas, data de criação e nº de conversas
+python manage_users.py add pessoa@exemplo.com             # cria (pede a senha duas vezes)
+python manage_users.py set-password pessoa@exemplo.com    # nova senha; desconecta a conta de todo navegador
+python manage_users.py delete pessoa@exemplo.com          # apaga a conta, as conversas e os PDFs (pede confirmação)
+python manage_users.py adopt-documents pessoa@exemplo.com # a base sem dono (rag_documentos) vira dela
+```
+
+`delete` e `adopt-documents` mexem também no Chroma, então precisam do
+servidor dele no ar.
+
+No deploy, rode dentro da máquina: `fly ssh console --app myllmadvisor-gpu`
+e, lá dentro, `cd /app && python manage_users.py ...`.
+
+### Conversas de antes das contas
+
+Antes das contas, as conversas ficavam no `localStorage` de cada navegador.
+Ao entrar pela primeira vez num navegador que ainda tem conversas assim, o
+Orientador oferece importá-las para a conta ("Importar conversas deste
+navegador?"); importadas, elas saem do navegador. Recusou, a pergunta volta
+na próxima vez que a página abrir. Um CSV exportado naquela época também é
+aceito pelo "⬆ Importar" (ver "Importar/exportar conversas" no Orientador).
+Nos dois casos, o HTML guardado de cada resposta volta a texto cru
+(`turnFromLegacyHtml` em `static/js/pages/rag-help.js`): negrito, títulos,
+tabelas e fórmulas são recuperados; as figuras voltam pelas menções
+"Figura N" do texto.
 
 > **Não rode `rag_papers.py index` com o servidor do Chroma no ar.** O indexador de linha de comando abre a pasta `.chromadb` direto em disco (`PersistentClient`), e dois processos escrevendo na mesma pasta ao mesmo tempo podem corromper o banco. Com o servidor rodando, use a tela `/upload` (que grava pelo servidor); a linha de comando é para indexar em lote com o servidor parado.
 
@@ -255,7 +479,7 @@ exatamente o mesmo código (`build_pipeline` + `index_pdf`).
 - A pasta é varrida recursivamente (`*.pdf`); cada arquivo vira um valor do metadado `source`, que é o que aparece nos combos de documentos das telas web.
 - Reindexar um PDF (mesmo nome) substitui todos os trechos da versão anterior dele na base.
 - Figuras são salvas em `.chromadb/figures/` com página + legenda, e cada uma é sempre descrita por um modelo multimodal (`qwen3.5`) — a descrição vira um chunk pesquisável junto com a imagem.
-- Tudo vai para a collection `rag_documentos`, com embedding `bge-m3`.
+- Tudo vai para a collection `rag_documentos`, com embedding `bge-m3`. Essa base não tem dono: no site, cada conta só enxerga a sua (ver "PDFs de cada usuário"). Para os PDFs indexados aqui aparecerem numa conta, passe a base a ela com `python manage_users.py adopt-documents <email>` (com o servidor do Chroma no ar).
 - `--incremental` pula PDFs já indexados (por hash de conteúdo).
 - `--formulas {ollama,docling,none}` escolhe como as equações viram LaTeX (ver abaixo).
 - `--kind {text,figure,equation}` filtra a busca em `query`; `--answer` chama `qwen3:8b` local.
@@ -320,8 +544,9 @@ do MathJax 4. Ver "Equações citadas na resposta" abaixo.
 
 ### `/` — Orientador
 
-O chat, focado na collection `rag_documentos` (`DEFAULT_BASE`), para
-conversar sobre os artigos e livros indexados. Sem combo de modelo/base: a
+O chat, focado na base de documentos do usuário (a collection
+`rag_documentos_u<id>`, ver "PDFs de cada usuário"), para conversar sobre
+os artigos e livros que ele indexou. Sem combo de modelo/base: a
 busca na base e a busca por palavras-chave já vêm ligadas — os valores são
 os defaults do próprio controller (`_parse_ask_request` em `rag_web.py`; o
 front-end só manda `context: true`, o resto fica por conta do default).
@@ -330,13 +555,16 @@ página.
 
 **Sidebar de conversas salvas.** Botão "Nova conversa" no topo da barra
 lateral, com dois ícones discretos ao lado — "⬇" Exportar e "⬆" Importar
-(ver abaixo); abaixo deles, a lista de conversas já salvas (título =
-primeira pergunta, truncada). Cada conversa é salva no `localStorage` do
-navegador como o próprio HTML já renderizado da thread — reabrir uma
-conversa salva é só reinjetar esse HTML de volta, mantendo a mesma
-`conversation_id` (dá memória ao chat, ver "Memória da conversa" abaixo;
-limitação: essa memória real do backend some num restart do servidor, mesmo
-com os turnos antigos ainda visíveis na tela). Cada bloco de resposta, menos
+(ver abaixo); abaixo deles, a lista das conversas da conta, da mais recente
+para a mais antiga (título = primeira pergunta, truncada). As conversas
+ficam no PostgreSQL (ver "Contas de usuário e banco de dados"), gravadas
+pelo próprio `/ask`: a pergunta assim que chega, a resposta ao terminar
+(concluída, cancelada ou com erro), mesmo que a página seja fechada no
+meio. A conversa aparece na lista já na primeira pergunta. Reabrir uma
+conversa busca os turnos no servidor (`/conversations/<id>`) e renderiza
+cada resposta de novo, a partir do texto cru do modelo e das figuras e
+equações daquele turno, mantendo o mesmo `conversation_id` (dá memória ao
+chat, ver "Memória da conversa" abaixo). Cada bloco de resposta, menos
 o primeiro (que define a conversa), tem um "✕" para excluir só aquele
 turno, sem apagar a conversa inteira; a conversa inteira também pode ser
 excluída pelo "×" ao lado do título dela na barra lateral. As duas
@@ -348,29 +576,31 @@ selecionar outra conversa, excluir a conversa ativa, nem clicar em "Nova
 conversa"/Exportar/Importar — evita perder ou corromper o turno em
 andamento.
 
-**Importar/exportar conversas (CSV).** Como as conversas só vivem no
-`localStorage` do navegador (não há conta de usuário nem banco de dados),
-"⬇ Exportar" baixa todas as conversas salvas num único arquivo
-`myllmadvisor_conversas_AAAA-MM-DD.csv` — uma linha por turno (colunas
-`conversation_id,title,turn_index,turn_id,html`), com o HTML do turno
-devidamente escapado (aspas duplicadas, campo entre aspas quando tem vírgula
-ou quebra de linha, como qualquer CSV bem formado). "⬆ Importar" lê um CSV
-nesse mesmo formato (ex.: o de um backup anterior, ou de outro navegador) e
-faz *upsert* por `conversation_id`: conversas com o mesmo id são
-sobrescritas, as demais são só adicionadas à lista, sem apagar nada que já
-existia. Útil pra levar o histórico entre máquinas/navegadores ou pra ter um
-backup fora do `localStorage` (que se perde ao limpar os dados do site).
+**Importar/exportar conversas (CSV).** "⬇ Exportar" baixa todas as
+conversas da conta num único arquivo `myllmadvisor_conversas_AAAA-MM-DD.csv`
+— uma linha por turno (colunas
+`conversation_id,title,turn_index,turn_id,question,answer,status,keywords,figures,equations`,
+as três últimas em JSON), devidamente escapado (aspas duplicadas, campo
+entre aspas quando tem vírgula ou quebra de linha, como qualquer CSV bem
+formado). "⬆ Importar" lê um CSV nesse formato, ou no de antes das contas
+(colunas `conversation_id,title,turn_index,turn_id,html`, ver "Conversas de
+antes das contas"), e grava na conta: conversa com o mesmo id de uma da
+conta é substituída; as demais são só adicionadas, sem apagar nada que já
+existia (um id que pertence a outra conta vira uma conversa nova). Útil para
+um backup próprio ou para passar conversas de uma conta para outra.
 
 **Combo de documentos.** Ao lado do botão Perguntar, um combo de múltipla
 escolha com os documentos da base, servido ao front-end por `/help-groups`:
 
 - por padrão (`HELP_DOC_GROUPS = {}` em `models/config.py`), lista
-  automaticamente **um item por PDF indexado** na collection `rag_documentos`
+  automaticamente **um item por PDF indexado** na base do usuário
   (valores distintos do metadado `source`, com o nome do arquivo sem extensão
   como rótulo) — indexou um PDF novo, ele já aparece, sem editar nada;
 - opcionalmente, `HELP_DOC_GROUPS` pode ser preenchido para agrupar vários
   PDFs sob um rótulo amigável e/ou definir quais vêm marcados de início
-  (`default_checked`) — ver o exemplo comentado em `models/config.py`.
+  (`default_checked`) — ver o exemplo comentado em `models/config.py`. Vale
+  para todas as contas, e cada uma só vê os grupos (e, neles, os PDFs) que
+  ela tem na base.
 
 Sem nada marcado (e sem nenhum `default_checked`), a busca vale para a
 collection inteira; com algo marcado, só o(s) documento(s) marcado(s) (ver
@@ -448,10 +678,13 @@ some sozinho quando o primeiro pedaço da resposta chega.
 `client.chat()` é stateless, só "lembra" o que vier na lista `messages`
 daquela chamada. Por isso o front-end gera um `conversationId` e manda em
 todo `/ask`; o backend (`ConversationService`, em
-`services/conversation_service.py`) guarda o histórico (só o texto de
-pergunta/resposta de cada turno, até `HELP_MEMORY_MAX_TURNS` turnos) e
-`ChatService.stream_answer` o inclui como mensagens antes do prompt do turno
-atual. Isso é diferente do **CONTEXTO** (os trechos do RAG — ver
+`services/conversation_service.py`) lê do banco os últimos turnos
+respondidos da conversa (só o texto de pergunta/resposta de cada um, até
+`HELP_MEMORY_MAX_TURNS` turnos) e `ChatService.stream_answer` os inclui
+como mensagens antes do prompt do turno atual. Como vem do banco, a memória
+sobrevive a um restart do servidor e acompanha a conversa reaberta em outro
+navegador; um turno excluído pelo "✕" sai dela. Isso é diferente do
+**CONTEXTO** (os trechos do RAG — ver
 `RetrievalService`): o contexto é refeito do zero a cada pergunta nova
 (nova busca, novos trechos); só a conversa em si (o texto puro de
 pergunta/resposta) é que se acumula — os trechos de um turno antigo não
@@ -471,9 +704,10 @@ trecho recuperado ("obrigado", "sim") são enviados ao modelo sem o
 
 ### `/upload` — Enviar PDFs
 
-Tela para subir PDFs pelo navegador e indexá-los na collection
-`rag_documentos`, sem linha de comando (link "Enviar PDFs" no rodapé do menu
-lateral).
+Tela para subir PDFs pelo navegador e indexá-los na base do usuário, sem
+linha de comando (link "Enviar PDFs" no rodapé do menu lateral). Tudo nela é
+da conta logada: os PDFs enviados, a lista "Na base", a fila de indexação e
+a exclusão (ver "PDFs de cada usuário").
 
 - **Envio**: arraste os PDFs para a área central ou clique nela para
   escolher (vários de uma vez, até `UPLOAD_MAX_MB` = 300 MB por envio). A
@@ -483,11 +717,13 @@ lateral).
   `.pdf` **e** cujo conteúdo começa com `%PDF-`; o nome é sanitizado (sem
   caminho, só letras/dígitos/espaço/`-_.()`, acentos preservados) e vira o
   `source` do documento — o nome que aparece no Orientador. Os arquivos ficam
-  em `UPLOAD_DIR` (`./documentos`). Um PDF que já está na fila não pode ser
-  reenviado até terminar.
-- **Indexação em segundo plano**: uma única thread indexa um PDF por vez
-  (Docling e os modelos do Ollama são pesados; dois ao mesmo tempo só
-  disputariam CPU/GPU), com o mesmo código da linha de comando
+  na pasta do usuário, `UPLOAD_DIR/u<id>` (`./documentos/u3`, por exemplo);
+  duas contas podem enviar PDFs de mesmo nome sem um substituir o outro. Um
+  PDF que já está na fila não pode ser reenviado até terminar.
+- **Indexação em segundo plano**: uma única thread indexa um PDF por vez,
+  de todas as contas, na ordem de chegada (Docling e os modelos do Ollama
+  são pesados; dois ao mesmo tempo só disputariam CPU/GPU), com o mesmo
+  código da linha de comando
   (`rag_papers.build_pipeline` + `rag_papers.index_pdf`), mas gravando pelo
   `HttpClient` do servidor do Chroma — nunca abrindo a pasta `.chromadb`
   direto, que o servidor já tem aberta. O Docling e os modelos são carregados
@@ -505,13 +741,14 @@ lateral).
   lixeira (visível ao passar o mouse; sempre visível em tela de toque) que,
   depois de confirmada num modal, tira da base todos os trechos dele (texto,
   figuras e equações) e apaga as imagens das figuras
-  (`IndexingService.remove_document`). O arquivo em `UPLOAD_DIR` não é
-  apagado. Enquanto houver algum PDF na fila ou indexando (ou um envio
-  subindo), todas as lixeiras ficam desativadas e o servidor recusa a
-  exclusão: indexação e exclusão nunca gravam na collection ao mesmo tempo
-  (`_write_lock`), porque a exclusão no meio de uma indexação falhava.
-- **Criação da base**: a collection `rag_documentos` só é criada pelo
-  indexador (no primeiro envio), sempre com a embedding `bge-m3`; as telas só
+  (`IndexingService.remove_document`). O PDF enviado não é apagado.
+  Enquanto houver algum PDF do usuário na fila ou indexando (ou um envio
+  subindo), as lixeiras dele ficam desativadas e o servidor recusa a
+  exclusão: indexação e exclusão nunca gravam na mesma collection ao mesmo
+  tempo (`_write_lock`, um por conta), porque a exclusão no meio de uma
+  indexação falhava. A indexação de outra conta não trava as lixeiras.
+- **Criação da base**: a collection do usuário só é criada pelo indexador
+  (no primeiro envio dele), sempre com a embedding `bge-m3`; as telas só
   a abrem (`ChromaCollectionFactory.open` nunca cria). Se ela já existir com
   outra embedding function (ex.: criada vazia, com a padrão do Chroma, por uma
   versão anterior do servidor — o erro "Embedding function conflict"), ela é
@@ -572,22 +809,37 @@ Setando `DEBUG = True` em `models/config.py` (padrão), cada pergunta feita impr
 
 ### Endpoints
 
-- `/` — Orientador (chat pré-configurado, focado em `rag_documentos`).
+Todos exigem login, menos `/auth/login` e `/auth/register`; sem login, as
+telas abrem com o popup de login e o resto responde 401. As rotas de
+conversa só enxergam as conversas da própria conta, e as de documentos,
+busca e chat, só a base dela (ver "PDFs de cada usuário").
+
+- `/` — Orientador (chat pré-configurado, focado na base do usuário).
+- `/account` — tela Minha conta.
+- `/auth/login` (POST) — entra (`email`, `password`) e grava o cookie da sessão.
+- `/auth/register` (POST) — cria a conta (`email`, `password`, `invite_code`) e já entra nela; só com `INVITE_CODE` definido.
+- `/auth/logout` (POST) — sai (apaga a sessão e o cookie).
+- `/auth/password` (POST) — troca a senha (`current_password`, `new_password`) e encerra as outras sessões da conta.
+- `/conversations` — conversas da conta (`id`, `title`), da mais recente para a mais antiga.
+- `/conversations/<id>` — uma conversa com todos os turnos (`question`, `answer`, `status`, `keywords`, `figures`, `equations`).
+- `/conversations/delete` (POST) — exclui uma conversa (`id`).
+- `/conversations/export` — todas as conversas da conta com os turnos (o "⬇ Exportar" monta o CSV a partir disso).
+- `/conversations/import` (POST) — grava conversas (`conversations`, no mesmo formato do export).
 - `/upload` (GET) — tela Enviar PDFs.
-- `/upload` (POST) — recebe os PDFs (campo `files`, vários) e os põe na fila de indexação; devolve os jobs criados e os rejeitados, com o motivo.
-- `/upload/jobs` — estado de cada envio desde que o servidor subiu (mais recente primeiro).
-- `/documents` — nomes dos PDFs indexados em `rag_documentos`.
-- `/documents/delete` (POST) — exclui um PDF da base (`source`): trechos e imagens das figuras; recusado (409) com indexação em andamento.
-- `/help-groups` — os documentos selecionáveis no combo do Orientador (rótulo + arquivo(s) de cada um): `HELP_DOC_GROUPS`, se preenchido, ou um item por PDF indexado em `rag_documentos`.
+- `/upload` (POST) — recebe os PDFs (campo `files`, vários), grava na pasta do usuário e os põe na fila de indexação da base dele; devolve os jobs criados e os rejeitados, com o motivo.
+- `/upload/jobs` — estado de cada envio do usuário desde que o servidor subiu (mais recente primeiro).
+- `/documents` — nomes dos PDFs indexados na base do usuário.
+- `/documents/delete` (POST) — exclui um PDF da base do usuário (`source`): trechos e imagens das figuras; recusado (409) com indexação dele em andamento.
+- `/help-groups` — os documentos selecionáveis no combo do Orientador (rótulo + arquivo(s) de cada um): `HELP_DOC_GROUPS`, se preenchido, ou um item por PDF indexado na base do usuário.
 - `/rag-view` — consulta bruta.
-- `/collections` — lista as collections do ChromaDB.
-- `/collection-metadata` — chaves de metadata e valores distintos de uma collection, para popular os combos de filtro.
+- `/collections` — as bases que o usuário pode consultar: só a dele.
+- `/collection-metadata` — chaves de metadata e valores distintos da base do usuário, para popular os combos de filtro.
 - `/models` — lista os modelos instalados no Ollama.
-- `/rag-query` — busca (sem LLM) usada pelo `/rag-view`.
-- `/ask` — pergunta + resposta em streaming (SSE) usada pelo Orientador; eventos: `keywords`, `figures`, `equations`, `debug_rows`, `thinking`, `content`, `cancelled`, `done`, `error_msg`. Parâmetro opcional `help_mode`: troca o prompt pelo `HELP_PROMPT` do Orientador (só `/` manda isso). Parâmetro opcional `conversation_id`: dá memória ao chat entre perguntas (ver `ConversationService`; só `/` manda isso). Parâmetro opcional `is_first_turn` (default `true`): decidido pelo front-end, usado pra mostrar as palavras-chave só no 1º turno e detectar seguimento puramente conversacional (só `/` manda `false`).
+- `/rag-query` — busca (sem LLM) na base do usuário, usada pelo `/rag-view`.
+- `/ask` — pergunta + resposta em streaming (SSE) usada pelo Orientador; eventos: `keywords`, `figures`, `equations`, `debug_rows`, `thinking`, `content`, `cancelled`, `done`, `error_msg`. Parâmetro opcional `help_mode`: troca o prompt pelo `HELP_PROMPT` do Orientador (só `/` manda isso). Parâmetros opcionais `conversation_id` e `turn_id` (UUIDs gerados pelo front-end): dão memória ao chat entre perguntas e gravam o turno na conversa da conta (ver `ConversationService`; só `/` manda isso). Parâmetro opcional `is_first_turn` (default `true`): decidido pelo front-end, usado pra mostrar as palavras-chave só no 1º turno e detectar seguimento puramente conversacional (só `/` manda `false`).
 - `/ask/cancel` — cancela uma pergunta em andamento (por `request_id`).
-- `/ask/forget-turn` — apaga um par pergunta/resposta da memória da conversa (`conversation_id`, `question`), chamado ao excluir um bloco de resposta no Orientador.
-- `/local-image` — serve imagens locais citadas nas respostas (restrito aos diretórios de figuras conhecidos).
+- `/ask/forget-turn` — apaga um par pergunta/resposta da conversa (`turn_id`), e com isso da memória das próximas perguntas; chamado ao excluir um bloco de resposta no Orientador.
+- `/local-image` — serve as figuras citadas nas respostas, só da pasta de figuras do usuário.
 
 ## Demonstração no GitHub Pages
 
@@ -600,13 +852,17 @@ próprio navegador:
   "Demonstração" na barra superior. Os caminhos absolutos do app (`/static/`,
   `/upload`) viram relativos, porque o Pages serve o site em `/MyLLMAdvisor/`.
   Precisa só do `flask`. Se um template mudar a ponto de o build não achar
-  onde injetar algo, ele para com uma mensagem dizendo o quê.
+  onde injetar algo, ele para com uma mensagem dizendo o quê. O demo abre
+  sempre "logado" numa conta fictícia (`DEMO_USER`), sem popup de login, e
+  inclui a tela Minha conta.
 - `demo/mock-api.js` intercepta `fetch` e `XMLHttpRequest` só no demo (o app
   nunca carrega esse arquivo): o Orientador responde em streaming, no mesmo
   formato SSE do `/ask`, uma pergunta de exemplo sobre transformada de Fourier
-  (texto escrito para o demo, com equações citadas e uma figura); o "Enviar
-  PDFs" simula o progresso do envio e a fila de indexação etapa por etapa, e
-  oferece um PDF de exemplo. Nenhum arquivo sai do navegador.
+  (texto escrito para o demo, com equações citadas e uma figura), e as
+  conversas "da conta" ficam no `localStorage` do navegador, no mesmo formato
+  que o servidor guardaria; o "Enviar PDFs" simula o progresso do envio e a
+  fila de indexação etapa por etapa, e oferece um PDF de exemplo; a troca de
+  senha só finge que deu certo. Nenhum arquivo sai do navegador.
 - `demo/assets/` tem a figura de exemplo; `doc/demo-orientador.png` é o
   screenshot do topo do README.
 - `.github/workflows/pages.yml` gera e publica o demo a cada push no `master`.
@@ -630,9 +886,10 @@ A versão online fica em <https://myllmadvisor-gpu.fly.dev> (app
 `myllmadvisor-gpu`, configurado no `fly.gpu.toml`) e roda em duas partes:
 
 - **no Fly**, uma máquina pequena (`performance-2x`, 8 GB, região `gru`)
-  com o site e o servidor do Chroma, e um volume `advisor_data` de 10 GB em
-  `/data` com o banco, os PDFs enviados e os modelos do Docling
-  (HuggingFace). O Docling roda ali mesmo, em CPU, durante uma indexação;
+  com o site, o servidor do Chroma e o PostgreSQL (contas e conversas), e um
+  volume `advisor_data` de 10 GB em `/data` com os dois bancos, os PDFs
+  enviados e os modelos do Docling (HuggingFace). O Docling roda ali mesmo,
+  em CPU, durante uma indexação;
 - **num PC com GPU** (o Fly desativou as máquinas com GPU em 31/07/2026), o
   Ollama com todos os modelos (chat, embedding, figuras e fórmulas),
   publicado na internet pelo Tailscale Funnel atrás de um proxy que exige
@@ -641,15 +898,17 @@ A versão online fica em <https://myllmadvisor-gpu.fly.dev> (app
 Os arquivos:
 
 - `Dockerfile` — Python 3.14 com o `requirements.txt` (torch na build de CPU,
-  sem as bibliotecas CUDA) e o binário do Ollama copiado da imagem oficial,
-  só com as bibliotecas de CPU (usado só na
+  sem as bibliotecas CUDA), o PostgreSQL 17 do Debian e o binário do Ollama
+  copiado da imagem oficial, só com as bibliotecas de CPU (usado só na
   [alternativa em CPU](#alternativa-tudo-em-cpu-flytoml)). `./.chromadb` e
   `./documentos` são links para o volume, então o código continua usando os
   mesmos caminhos relativos.
-- `deploy/start.sh` — sobe o Chroma e o site (gunicorn, **um processo só**,
-  porque a fila de indexação e a memória das conversas vivem na memória
-  dele). Com `OLLAMA_HOST` definido, não sobe o Ollama local nem baixa
-  modelos. Se um dos processos cair, a máquina reinicia.
+- `deploy/start.sh` — sobe o PostgreSQL, o Chroma e o site (gunicorn, **um
+  processo só**, porque a fila de indexação, os cancelamentos e o limite de
+  tentativas de login vivem na memória dele). Com `OLLAMA_HOST` definido,
+  não sobe o Ollama local nem baixa modelos. Se um dos processos cair, a
+  máquina reinicia; numa parada (deploy, desligamento sem tráfego), repassa
+  o sinal aos processos, para o PostgreSQL fechar o banco direito.
 - `fly.gpu.toml` — a máquina, o volume e o **desligamento automático** sem
   tráfego: só se paga o tempo com a máquina ligada (mais o volume), e o
   primeiro acesso depois de um tempo parado demora alguns segundos a mais.
@@ -661,10 +920,23 @@ sozinha `OLLAMA_HOST` e, se definido, `OLLAMA_API_KEY`, que vai como
 própria: exposto na internet, ele precisa de um proxy na frente que exija
 esse token (ou de uma rede privada), senão qualquer um usa a sua GPU.
 
-**Senha.** Com a variável `AUTH_PASSWORD` definida, todas as rotas pedem
-autenticação HTTP básica (usuário `AUTH_USER`, padrão `advisor`): o navegador
-pede a senha uma vez e a reenvia sozinho. Sem ela (uso local) o acesso é
-livre. Ver `_require_login` em `rag_web.py`.
+**Contas.** O site pede login (ver "Contas de usuário e banco de dados"); o
+secret `INVITE_CODE` liga a criação de conta pela tela de login.
+
+**PostgreSQL na própria máquina.** Não há Postgres gratuito no Fly (o
+Managed Postgres começa em US$ 38/mês), então ele roda junto com o site, sem
+custo extra, desligando e ligando com a máquina. Na primeira subida, o
+`deploy/start.sh` cria o banco em `/data/postgres` (no volume) e roda os
+SQLs de `db/`, que nas subidas seguintes só conferem que está tudo lá. O
+banco aceita conexões só pelo socket Unix (`/run/postgresql`, o `DB_HOST`
+do `[env]`), de dentro da máquina e sem senha; nenhuma porta TCP fica
+aberta. O backup vem dos snapshots diários que o Fly faz do volume (os
+primeiros 10 GB por mês são gratuitos); para uma cópia avulsa, entre com
+`fly ssh console --app myllmadvisor-gpu` e rode
+`/usr/lib/postgresql/17/bin/pg_dump -h /run/postgresql -U advisor myllmadvisor > /data/backup.sql`
+(depois, `fly ssh sftp get /data/backup.sql --app myllmadvisor-gpu` traz o arquivo).
+Com o secret `DATABASE_URL` definido, o `start.sh` não sobe o Postgres local
+e o site usa o banco desse endereço.
 
 **Stream da resposta.** O modelo pode passar um bom tempo lendo o prompt
 antes do primeiro pedaço da resposta (minutos, em CPU); para o proxy não
@@ -729,18 +1001,25 @@ com o `OLLAMA_HOST` e o `OLLAMA_API_KEY` que o `instalar.ps1` mostrou:
 iwr https://fly.io/install.ps1 -useb | iex     # instala o flyctl
 fly auth login
 fly apps create myllmadvisor-gpu                # nome ocupado? troque também o "app" do fly.gpu.toml
-fly secrets set --app myllmadvisor-gpu AUTH_PASSWORD="uma-senha-forte" `
+fly secrets set --app myllmadvisor-gpu INVITE_CODE="um-codigo-de-convite" `
     OLLAMA_HOST="https://<pc>.<tailnet>.ts.net" OLLAMA_API_KEY="token-do-proxy"
 fly deploy --config fly.gpu.toml --ha=false     # uma máquina só: o volume e o estado são dela
 fly open
 ```
 
-Para conferir se o site chega ao Ollama do PC, o `/models` deve listar os
-modelos de chat de lá:
+Abra o site, crie a sua conta em "Recebeu um convite? Criar conta" com o
+código acima e passe o código a quem também deve usar. Se o volume já tinha
+PDFs indexados de antes das contas, eles ficaram na base sem dono: passe-os
+à sua conta (ver "PDFs de cada usuário"):
 
 ```powershell
-curl.exe -u advisor:uma-senha-forte https://myllmadvisor-gpu.fly.dev/models
-```
+fly ssh console --app myllmadvisor-gpu
+# já dentro da máquina:
+cd /app && python manage_users.py adopt-documents seu@email.com
+``` Para conferir se o
+site chega ao Ollama do PC, logado, abra
+`https://myllmadvisor-gpu.fly.dev/models`: deve listar os modelos de chat
+de lá.
 
 Depois, cada `fly deploy --config fly.gpu.toml` reconstrói a imagem e
 mantém o volume. A base online começa vazia: envie os PDFs pela tela
@@ -748,18 +1027,34 @@ mantém o volume. A base online começa vazia: envie os PDFs pela tela
 tráfego, e é a consulta periódica dessa tela que a mantém ligada durante a
 indexação).
 
-### Trocar a senha e o token
+### Trocar senhas, o convite e o token
 
-**Senha do site** (`AUTH_PASSWORD`), de qualquer máquina com o flyctl:
+**Senha de uma conta**: a própria pessoa troca em **Minha conta** >
+**Alterar senha**, e os outros navegadores logados na conta saem. Quem
+esqueceu a senha não tem como recuperá-la sozinho (o site não manda
+e-mail): defina uma nova pela máquina e passe-a à pessoa, que depois a
+troca em Minha conta:
 
 ```powershell
-fly secrets set --app myllmadvisor-gpu AUTH_PASSWORD="nova-senha-forte"
+fly ssh console --app myllmadvisor-gpu
+# já dentro da máquina:
+cd /app && python manage_users.py set-password pessoa@exemplo.com
 ```
 
-O `secrets set` já reinicia a máquina com o valor novo. O navegador guarda
-a senha antiga e só pede de novo depois de fechado (ou numa janela
-anônima). O usuário também pode mudar, com `AUTH_USER="outro-nome"` no
-mesmo comando.
+Isso também desconecta a conta de todos os navegadores, o jeito de expulsar
+quem tenha descoberto a senha.
+
+**Código de convite** (`INVITE_CODE`), quando ele circular além de quem
+deveria (as contas já criadas continuam valendo):
+
+```powershell
+fly secrets set --app myllmadvisor-gpu INVITE_CODE="outro-codigo"
+fly secrets unset --app myllmadvisor-gpu INVITE_CODE   # ou: fecha a criação de contas
+```
+
+O `secrets set`/`unset` já reinicia a máquina com o valor novo. Para tirar
+alguém de vez: `python manage_users.py delete pessoa@exemplo.com`, como
+acima.
 
 **Token do Ollama** (`OLLAMA_API_KEY`), quando ele vazar ou por precaução.
 No PC com a GPU, num PowerShell (se o flyctl estiver em outra máquina,
@@ -792,7 +1087,7 @@ tira o Ollama da internet (o site passa a falhar nas perguntas);
 `tailscale funnel --bg 11435` o publica de novo, no mesmo endereço.
 
 Na [alternativa em CPU](#alternativa-tudo-em-cpu-flytoml) não há token (o
-Ollama fica dentro da máquina); a senha troca do mesmo jeito, com
+Ollama fica dentro da máquina); senhas e convite trocam do mesmo jeito, com
 `--app myllmadvisor`.
 
 ### Alternativa: tudo em CPU (`fly.toml`)
@@ -806,7 +1101,7 @@ ligada. Foi o primeiro deploy (app `myllmadvisor`, removido em 30/10/2026).
 
 ```powershell
 fly apps create myllmadvisor                    # nome ocupado? troque também o "app" do fly.toml
-fly secrets set AUTH_PASSWORD="uma-senha-forte" --app myllmadvisor
+fly secrets set INVITE_CODE="um-codigo-de-convite" --app myllmadvisor
 fly deploy --ha=false
 fly logs                                        # acompanhe o download dos modelos (~20 GB, só na 1ª vez)
 ```
@@ -824,11 +1119,12 @@ modelo" (Ctrl+clique em "Perguntar") só oferece os modelos baixados.
 
 | Collection | Origem | Embedding |
 |---|---|---|
-| `rag_documentos` | `rag_papers.py index` (artigos e livros) | bge-m3 |
+| `rag_documentos_u<id>` | tela Enviar PDFs da conta de id `<id>` (`UserStorage.collection`) | bge-m3 |
+| `rag_documentos` | `rag_papers.py index` (artigos e livros), sem dono até `manage_users.py adopt-documents` | bge-m3 |
 
 O `rag_web.py` identifica o "dono" de cada collection pelos metadados gravados nela, não pelo nome (`ChromaCollectionFactory.kind()`): com `embedding_model` no metadata → veio do `rag_papers.py` ("docling", aberta com a embedding `bge-m3`); sem → "generic" (collection avulsa). O Orientador sempre usa o `HELP_PROMPT`; sem `help_mode`, uma collection do `rag_papers.py` usa o `DOC_PROMPT` dele, e uma avulsa, um prompt genérico.
 
 ## Administrar bases
 
 - Não apague manualmente arquivos dentro de `.chromadb` sem saber o que está fazendo.
-- Para recriar uma base do zero: apague a collection específica (via `chromadb`/`list_collections()`/`delete_collection()`, não a pasta inteira) e reenvie os PDFs pelo `/upload` (ou rode `rag_papers.py index` com o servidor do Chroma parado).
+- Para recriar uma base do zero: apague a collection específica (via `chromadb`/`list_collections()`/`delete_collection()`, não a pasta inteira) e reenvie os PDFs pelo `/upload` da conta (ou rode `rag_papers.py index` com o servidor do Chroma parado e passe a base à conta com `manage_users.py adopt-documents`).

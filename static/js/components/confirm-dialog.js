@@ -1,6 +1,6 @@
 // Componente: confirmação modal das exclusões (documento da base, conversa,
-// bloco de pergunta/resposta), no lugar do window.confirm do navegador.
-// Estilo: .confirm-dialog em static/layout.css.
+// bloco de pergunta/resposta) e de outras ações (confirmAction), no lugar do
+// window.confirm do navegador. Estilo: .confirm-dialog em static/layout.css.
 import { escapeHtml } from '../services/text.js';
 
 let dialog = null;
@@ -21,7 +21,7 @@ function ensureDialog() {
     <p class="confirm-dialog-message"></p>
     <div class="row">
       <button type="button" class="btn-secondary" value="cancel">Cancelar</button>
-      <button type="button" class="btn-danger" value="confirm"></button>
+      <button type="button" class="confirm-dialog-ok" value="confirm"></button>
     </div>`;
   // Clique no fundo escurecido (fora da caixa) = cancelar.
   dialog.addEventListener('click', e => {
@@ -38,11 +38,23 @@ function ensureDialog() {
 // excluir; Cancelar, Esc ou clique fora resolvem false. `message` é texto
 // puro; `detail` (opcional, ex.: nome do arquivo) aparece em destaque.
 export function confirmDelete({ title, message, detail = '', confirmLabel = 'Excluir' }) {
+  return openConfirm({ title, message, detail, confirmLabel, danger: true });
+}
+
+// Igual, para uma ação que não apaga nada: sem a lixeira, botão na cor normal.
+export function confirmAction({ title, message, detail = '', confirmLabel = 'Confirmar' }) {
+  return openConfirm({ title, message, detail, confirmLabel, danger: false });
+}
+
+function openConfirm({ title, message, detail, confirmLabel, danger }) {
   const dlg = ensureDialog();
   dlg.querySelector('h2').textContent = title;
   dlg.querySelector('.confirm-dialog-message').innerHTML =
     (detail ? `<strong class="confirm-dialog-detail">${escapeHtml(detail)}</strong>` : '') + escapeHtml(message);
-  dlg.querySelector('.btn-danger').textContent = confirmLabel;
+  dlg.querySelector('.confirm-dialog-icon').style.display = danger ? '' : 'none';
+  const okBtn = dlg.querySelector('.confirm-dialog-ok');
+  okBtn.textContent = confirmLabel;
+  okBtn.classList.toggle('btn-danger', danger);
   dlg.returnValue = 'cancel';
   return new Promise(resolve => {
     dlg.addEventListener('close', () => resolve(dlg.returnValue === 'confirm'), { once: true });

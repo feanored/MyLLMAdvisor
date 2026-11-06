@@ -16,6 +16,8 @@
   template que estende "base.html" preenchendo os blocos "sidebar" e
   "content", e uma entrada em NAV_ITEMS (models/config.py).
   `active` (passado por render_template) marca o link da tela atual.
+  Sem login (`current_user` vazio), nenhuma tela mostra o seu conteúdo nem
+  carrega os seus scripts: no lugar, o convite para entrar e o popup de login.
 #}
 {# Ícones do menu, em traço fino como o padrão da barra superior. #}
 {% macro nav_icon(name) -%}
@@ -25,6 +27,8 @@
   <path d="M4 5h16v11H9l-5 4z"/><path d="M8 9h8M8 12h5"/>
   {%- elif name == "upload" %}
   <path d="M6 3h8l4 4v14H6z"/><path d="M14 3v4h4"/><path d="M12 17v-6M9.5 13.5 12 11l2.5 2.5"/>
+  {%- elif name == "account" %}
+  <circle cx="12" cy="8" r="4"/><path d="M4.5 20c1.2-3.6 4-5.5 7.5-5.5s6.3 1.9 7.5 5.5"/>
   {%- else %}
   <circle cx="12" cy="12" r="3"/>
   {%- endif %}
@@ -33,7 +37,17 @@
 <div class="app">
   <header class="app-header">
     <a href="{{ url_for('index') }}" class="app-title">My LLM Advisor</a>
-    {% block header_actions %}{% endblock %}
+    <div class="header-actions">
+      {% block header_actions %}{% endblock %}
+      {% if current_user %}
+      <a href="{{ url_for('account_page') }}" title="{{ current_user.email }}"
+         class="header-link{% if active == 'account_page' %} active{% endif %}">
+        {{ nav_icon("account") }}<span>Minha conta</span>
+      </a>
+      {% else %}
+      <button type="button" class="header-link" data-open-login>{{ nav_icon("account") }}<span>Entrar</span></button>
+      {% endif %}
+    </div>
   </header>
 
   <div class="body-row">
@@ -48,7 +62,7 @@
              stroke-linecap="round" aria-hidden="true"><path d="M6 6l12 12M18 6 6 18"/></svg>
       </button>
       <div class="sidebar-content">
-        {% block sidebar %}{% endblock %}
+        {% if current_user %}{% block sidebar %}{% endblock %}{% endif %}
       </div>
       <nav class="sidebar-nav" aria-label="Telas">
         {% for item in nav_items %}
@@ -63,11 +77,49 @@
     <div class="sidebar-backdrop" id="sidebar-backdrop"></div>
 
     <main class="main-col">
+      {% if current_user %}
       {% block content %}{% endblock %}
+      {% else %}
+      <div class="login-gate">
+        <h1>Entre para continuar</h1>
+        <p>As conversas com o Orientador ficam guardadas na sua conta, e você as encontra em qualquer navegador.</p>
+        <button type="button" data-open-login>Entrar</button>
+      </div>
+      {% endif %}
     </main>
   </div>
 </div>
 <script type="module" src="/static/js/components/sidebar.js"></script>
+{% if current_user %}
 {% block body_end %}{% endblock %}
+{% else %}
+{# Popup de login (static/js/components/login-dialog.js), aberto sozinho ao
+   carregar a tela. Com INVITE_CODE definido, também cria conta. #}
+<dialog id="login-dialog" class="form-dialog" aria-labelledby="login-title">
+  <form id="login-form" class="auth-form" novalidate>
+    <h2 id="login-title">Entrar</h2>
+    <label for="login-email">E-mail</label>
+    <input type="email" id="login-email" name="email" autocomplete="username" required>
+    <label for="login-password">Senha</label>
+    <input type="password" id="login-password" name="password" autocomplete="current-password" required>
+    {% if invite_enabled %}
+    <div class="register-fields" id="register-fields" hidden>
+      <label for="login-password2">Repita a senha</label>
+      <input type="password" id="login-password2" name="password2" autocomplete="new-password">
+      <label for="login-invite">Código de convite</label>
+      <input type="text" id="login-invite" name="invite_code" autocomplete="off" spellcheck="false">
+    </div>
+    {% endif %}
+    <p class="form-error" id="login-error" role="alert" hidden></p>
+    <div class="row">
+      <button type="submit" id="login-submit">Entrar</button>
+    </div>
+    {% if invite_enabled %}
+    <p class="form-switch"><button type="button" class="btn-link" id="login-mode-btn">Recebeu um convite? Criar conta</button></p>
+    {% endif %}
+  </form>
+</dialog>
+<script type="module" src="/static/js/components/login-dialog.js"></script>
+{% endif %}
 </body>
 </html>

@@ -1,2 +1,4 @@
 # Scripts que rodam no container Linux (deploy/start.sh): CRLF quebraria o bash.
 *.sh text eol=lf
+# SQL do banco (db/): o deploy/start.sh os roda no psql do container, onde CRLF quebraria os \set.
+*.sql text eol=lf

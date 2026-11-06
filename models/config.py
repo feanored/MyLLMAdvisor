@@ -16,10 +16,13 @@ __all__ = [
     "NRAG_RESULTS", "MAX_DISTANCE", "DEBUG", "STOPWORDS",
     "KEYWORD_SEARCH", "KEYWORD_MAX_TERMS", "KEYWORD_MIN_LEN",
     "KEYWORD_MAX_DISTANCE", "KEYWORD_MIN_PER_TERM", "KEYWORD_PHRASE_LABEL",
-    "LOCAL_IMAGE_ROOTS", "LOCAL_IMAGE_EXTENSIONS",
+    "FIGURES_DIR", "LOCAL_IMAGE_EXTENSIONS",
     "HELP_DOC_GROUPS", "HELP_MEMORY_MAX_TURNS",
     "UPLOAD_DIR", "UPLOAD_MAX_MB", "NAV_ITEMS",
-    "CHROMA_HOST", "CHROMA_PORT", "AUTH_USER", "AUTH_PASSWORD",
+    "CHROMA_HOST", "CHROMA_PORT",
+    "DATABASE_URL", "DB_HOST", "DB_PORT", "DB_NAME", "DB_USER", "DB_PASSWORD", "DB_POOL_MAX_SIZE",
+    "SESSION_COOKIE", "SESSION_DAYS", "PASSWORD_MIN_LEN", "PASSWORD_MAX_LEN", "INVITE_CODE",
+    "LOGIN_MAX_FAILURES", "LOGIN_LOCKOUT_MINUTES", "CONVERSATION_TITLE_MAX_LEN",
 ]
 
 # --- Servidor do ChromaDB ------------------------------------------------------
@@ -28,19 +31,50 @@ __all__ = [
 CHROMA_HOST = os.environ.get("CHROMA_HOST", "localhost")
 CHROMA_PORT = int(os.environ.get("CHROMA_PORT", "8000"))
 
-# --- Acesso -------------------------------------------------------------------
-# Com AUTH_PASSWORD definido (deploy online, via `fly secrets set`), todas as
-# rotas exigem autenticação HTTP básica com AUTH_USER/AUTH_PASSWORD; sem ele
-# (uso local), o acesso é livre. O endereço do Ollama vem de OLLAMA_HOST, lido
-# direto pela biblioteca `ollama`.
-AUTH_USER = os.environ.get("AUTH_USER", "advisor")
-AUTH_PASSWORD = os.environ.get("AUTH_PASSWORD", "")
+# O endereço do Ollama vem de OLLAMA_HOST, lido direto pela biblioteca `ollama`.
+
+# --- Banco de dados (PostgreSQL) -----------------------------------------------
+# Contas, sessões de login e conversas (ver db/ e PostgresPoolFactory). O
+# padrão é um servidor local criado com db/01_create_database.sql; cada valor
+# pode vir de uma variável de ambiente de mesmo nome. DATABASE_URL, se
+# definida (ex.: postgresql://usuario:senha@host:5432/banco), vale no lugar de
+# todos os DB_*. DB_HOST também aceita a pasta do socket Unix (ex.:
+# /run/postgresql, como no fly.io, onde o Postgres roda na mesma máquina).
+DATABASE_URL = os.environ.get("DATABASE_URL", "")
+DB_HOST = os.environ.get("DB_HOST", "localhost")
+DB_PORT = int(os.environ.get("DB_PORT", "5432"))
+DB_NAME = os.environ.get("DB_NAME", "myllmadvisor")
+DB_USER = os.environ.get("DB_USER", "advisor")
+DB_PASSWORD = os.environ.get("DB_PASSWORD", "advisor")
+DB_POOL_MAX_SIZE = 10  # conexões abertas ao mesmo tempo (o gunicorn tem 16 threads)
+
+# --- Contas e login --------------------------------------------------------------
+# Toda rota, menos o login, exige uma conta (ver AuthService e _load_user em
+# rag_web.py). A sessão é um cookie HttpOnly com um token aleatório; o banco
+# guarda só o hash dele (tabela sessions).
+SESSION_COOKIE = "advisor_session"
+SESSION_DAYS = 30            # validade de um login; depois, pede a senha de novo
+PASSWORD_MIN_LEN = 10
+PASSWORD_MAX_LEN = 256       # teto: o hash de uma "senha" de megabytes travaria o servidor
+# Código de convite para criar conta pela tela de login. Vazio (padrão) =
+# ninguém cria conta por lá, só pelo manage_users.py. Online, defina com
+# `fly secrets set INVITE_CODE=...`: quem tem conta usa a GPU do Ollama.
+INVITE_CODE = os.environ.get("INVITE_CODE", "")
+# Contra adivinhação de senha (e de código de convite): depois de
+# LOGIN_MAX_FAILURES erros em LOGIN_LOCKOUT_MINUTES, o mesmo e-mail (ou o mesmo
+# IP, com o triplo de tentativas) fica bloqueado até a janela passar.
+LOGIN_MAX_FAILURES = 5
+LOGIN_LOCKOUT_MINUTES = 15
 
 # --- Modelo / base padrão ---------------------------------------------------
 # qwen3:8b, local e online (mais rápido, e o único viável em CPU no fly.io).
 # A variável de ambiente DEFAULT_MODEL troca o padrão (ex.: qwen3:14b, com
 # qualidade de resposta melhor numa GPU local).
 DEFAULT_MODEL = os.environ.get("DEFAULT_MODEL", "qwen3:8b")
+# Cada usuário tem a sua base: a collection DEFAULT_BASE + "_u" + id da conta
+# (ex.: rag_documentos_u3, ver UserStorage). A DEFAULT_BASE em si é a do
+# `rag_papers.py index` de linha de comando, que nenhuma conta enxerga até
+# ser passada a uma (manage_users.py adopt-documents).
 DEFAULT_BASE = "rag_documentos"
 # Modelos de chat que o popup "Trocar modelo" (Ctrl+clique em "Perguntar")
 # pode oferecer, filtrados a partir de `ollama list` — ver ChatService.list_models.
@@ -102,32 +136,35 @@ their there these this to was were what when where which who why with would you 
 """.split())
 
 # --- Imagens locais -----------------------------------------------------------
-# Diretórios onde imagens locais (figuras extraídas dos PDFs) podem residir.
-LOCAL_IMAGE_ROOTS = [
-    Path("./.chromadb/figures"),
-]
+# Figuras extraídas dos PDFs: uma subpasta por usuário (u<id>, ver
+# UserStorage), e o /local-image só serve as da conta logada.
+FIGURES_DIR = Path("./.chromadb/figures")
 LOCAL_IMAGE_EXTENSIONS = {".png", ".jpg", ".jpeg", ".gif", ".webp", ".bmp"}
 
 # --- Orientador (root, página inicial) --------------------------------------
 # Documentos selecionáveis no combo do Orientador. Cada chave vira um filtro
 # de metadado "source" ($in); `default_checked` decide a seleção inicial.
 # Vazio (padrão) = o combo lista sozinho todos os documentos (valores de
-# "source") da collection DEFAULT_BASE, um por item, sem precisar editar nada
-# a cada PDF novo indexado. Preencha só para agrupar/renomear documentos, ex.:
+# "source") da base do usuário, um por item, sem precisar editar nada a cada
+# PDF novo indexado. Preencha só para agrupar/renomear documentos (vale para
+# todas as contas; cada uma só vê os grupos com PDFs que ela tem), ex.:
 #   HELP_DOC_GROUPS = {
 #       "livro_x": {"label": "Livro X", "sources": ["Livro_X.pdf"], "default_checked": True},
 #       "artigos": {"label": "Artigos", "sources": ["artigo1.pdf", "artigo2.pdf"]},
 #   }
 HELP_DOC_GROUPS = {}
 
-# Teto de turnos guardados por ConversationService, pra não estourar o
-# num_ctx do modelo (16k tokens) somado ao CONTEXTO do turno atual.
+# Teto de turnos que ConversationService devolve como memória da conversa,
+# pra não estourar o num_ctx do modelo (16k tokens) somado ao CONTEXTO do
+# turno atual. No banco, a conversa guarda todos.
 HELP_MEMORY_MAX_TURNS = 6
+# Título de uma conversa: a primeira pergunta, truncada neste tamanho.
+CONVERSATION_TITLE_MAX_LEN = 60
 
 # --- Envio de PDFs (/upload) -------------------------------------------------
 # Pasta onde os PDFs enviados pela tela /upload são guardados antes de
-# indexados (na collection do rag_papers.py, ver IndexingService). Um PDF
-# reenviado com o mesmo nome substitui o anterior, na pasta e na base.
+# indexados (ver IndexingService), numa subpasta por usuário (u<id>). Um PDF
+# reenviado com o mesmo nome substitui o anterior, na pasta e na base dele.
 UPLOAD_DIR = Path("./documentos")
 UPLOAD_MAX_MB = 300  # teto por requisição (soma dos arquivos enviados de uma vez)
 

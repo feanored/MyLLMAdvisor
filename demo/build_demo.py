@@ -21,6 +21,7 @@ from __future__ import annotations
 import argparse
 import shutil
 import sys
+from datetime import datetime
 from pathlib import Path
 
 from flask import Flask, render_template
@@ -36,8 +37,13 @@ from models import NAV_ITEMS, UPLOAD_MAX_MB  # noqa: E402  (só config, sem depe
 PAGES = {
     "index": ("orientador.html", "index.html", {}),
     "upload_page": ("upload.html", "upload.html", {"max_mb": UPLOAD_MAX_MB}),
+    "account_page": ("account.html", "account.html", {}),
 }
-URLS = {"index": "/", "upload_page": "/upload"}
+URLS = {"index": "/", "upload_page": "/upload", "account_page": "/account"}
+
+# O demo abre sempre "logado" nesta conta fictícia: sem login, os templates
+# mostrariam só o popup de login (ver base.html).
+DEMO_USER = {"email": "demonstracao@exemplo.com", "created_at": datetime(2026, 1, 1)}
 
 # Ferramentas de administração ficam de fora do demo.
 STATIC_EXCLUDE = {"rag_view.html", "rag_view.css", "rag-view.js"}
@@ -60,7 +66,7 @@ def render_pages(repo_url):
 
     @app.context_processor
     def _layout_context():
-        return {"nav_items": NAV_ITEMS}
+        return {"nav_items": NAV_ITEMS, "current_user": DEMO_USER, "invite_enabled": False}
 
     badge = ('<p class="demo-badge">Demonstração: respostas e indexação simuladas no navegador. '
              f'<a href="{repo_url}">Ver o código</a></p>') if repo_url else \

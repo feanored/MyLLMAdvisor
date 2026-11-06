@@ -1,0 +1,52 @@
+{% extends "base.html" %}
+
+{% block title %}Minha conta - My LLM Advisor{% endblock %}
+
+{% block head %}
+<link rel="stylesheet" href="/static/account.css">
+{% endblock %}
+
+{% block content %}
+<div class="account-page">
+  <div class="account-inner">
+    <h1 class="page-title">Minha conta</h1>
+
+    <section class="card account-card" aria-label="Dados da conta">
+      <dl class="account-info">
+        <dt>E-mail</dt>
+        <dd>{{ current_user.email }}</dd>
+        <dt>Conta criada em</dt>
+        <dd>{{ current_user.created_at.strftime("%d/%m/%Y") }}</dd>
+      </dl>
+      <div class="account-actions">
+        <button type="button" id="change-password-btn">Alterar senha</button>
+        <button type="button" id="logout-btn" class="btn-secondary">Sair</button>
+      </div>
+      <p class="account-status" id="account-status" role="status"></p>
+    </section>
+  </div>
+</div>
+{% endblock %}
+
+{% block body_end %}
+<dialog id="password-dialog" class="form-dialog" aria-labelledby="password-title">
+  <form id="password-form" class="auth-form" novalidate>
+    <h2 id="password-title">Alterar senha</h2>
+    <p class="form-lede">Os outros navegadores conectados nesta conta saem e pedem a senha nova.</p>
+    {# Para o gerenciador de senhas do navegador saber de qual conta é a senha nova. #}
+    <input type="email" name="username" autocomplete="username" value="{{ current_user.email }}" hidden>
+    <label for="current-password">Senha atual</label>
+    <input type="password" id="current-password" name="current_password" autocomplete="current-password" required>
+    <label for="new-password">Nova senha</label>
+    <input type="password" id="new-password" name="new_password" autocomplete="new-password" required>
+    <label for="new-password2">Repita a nova senha</label>
+    <input type="password" id="new-password2" name="new_password2" autocomplete="new-password" required>
+    <p class="form-error" id="password-error" role="alert" hidden></p>
+    <div class="row">
+      <button type="button" class="btn-secondary" id="password-cancel-btn">Cancelar</button>
+      <button type="submit" id="password-submit">Salvar senha</button>
+    </div>
+  </form>
+</dialog>
+<script type="module" src="/static/js/pages/account.js"></script>
+{% endblock %}

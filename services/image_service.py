@@ -1,39 +1,29 @@
 """Service: validação de caminhos de imagens locais (figuras extraídas dos
 PDFs) citadas nas respostas do RAG, antes de servi-las pelo endpoint
-`/local-image` — nunca serve um arquivo fora de LOCAL_IMAGE_ROOTS.
+`/local-image` — só serve imagens da pasta de figuras da conta logada.
 """
 from pathlib import Path
 
-from models import LOCAL_IMAGE_EXTENSIONS, LOCAL_IMAGE_ROOTS
+from models import LOCAL_IMAGE_EXTENSIONS
+
+from .user_storage import UserStorage
 
 
 class LocalImageService:
     @staticmethod
-    def resolve(raw_path):
-        """Resolve `raw_path` para um Path seguro dentro de um dos
-        LOCAL_IMAGE_ROOTS, ou devolve None se o caminho for inválido, tiver
-        extensão não permitida, não existir, ou cair fora dos diretórios
-        conhecidos (nesse último caso, `forbidden` some True para o
-        controller responder 403 em vez de 404)."""
-        if not raw_path:
-            return None, False
+    def resolve(raw_path, user_id):
+        """A imagem de nome igual ao de `raw_path` na pasta de figuras do
+        usuário (ver UserStorage.figures_dir), ou None se não houver.
 
-        try:
-            target = Path(raw_path).resolve()
-        except (OSError, ValueError):
-            return None, False
-
-        if target.suffix.lower() not in LOCAL_IMAGE_EXTENSIONS or not target.is_file():
-            return None, False
-
-        roots = []
-        for root in LOCAL_IMAGE_ROOTS:
-            try:
-                roots.append(root.resolve())
-            except OSError:
-                continue
-
-        if not any(target == root or root in target.parents for root in roots):
-            return None, True  # forbidden: existe, mas fora dos diretórios conhecidos
-
-        return target, False
+        Só o nome do arquivo conta, nunca as pastas do caminho: não dá pra
+        sair da pasta da conta ("../"), e caminhos gravados antes de as
+        figuras irem para uma pasta por conta (respostas antigas, conversas
+        importadas) continuam achando a imagem depois de os PDFs serem
+        passados à conta (manage_users.py adopt-documents)."""
+        name = Path(str(raw_path or "").replace("\\", "/")).name
+        if not name or Path(name).suffix.lower() not in LOCAL_IMAGE_EXTENSIONS:
+            return None
+        # Absoluto: o send_file do Flask leria um caminho relativo a partir
+        # da pasta do app, não da pasta onde o servidor roda.
+        target = (UserStorage.figures_dir(user_id) / name).resolve()
+        return target if target.is_file() else None

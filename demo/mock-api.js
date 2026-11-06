@@ -4,7 +4,8 @@
 // verdade nunca carrega este arquivo. Intercepta:
 //   fetch: /models, /help-groups, /documents, /documents/delete, /upload/jobs, /ask (stream SSE
 //          no mesmo formato de _format_sse_event em rag_web.py), /ask/cancel,
-//          /ask/forget-turn
+//          /ask/forget-turn, /conversations[/...] (as conversas "da conta", guardadas
+//          no localStorage deste navegador), /auth/password e /auth/logout
 //   XMLHttpRequest: POST /upload (progresso do envio + fila de indexação)
 // Nenhum arquivo sai do navegador: o "upload" só registra nome e tamanho.
 (function () {
@@ -72,12 +73,20 @@ Na prática, isso troca uma integral para cada ponto de saída, de custo $O(N^2)
   // Rota da API a partir da URL (o app usa caminhos absolutos, "/ask"; no
   // GitHub Pages eles apontam pra raiz do domínio, então vale o fim do caminho).
   const ROUTES = ['upload/jobs', 'ask/cancel', 'ask/forget-turn', 'help-groups', 'documents/delete', 'documents',
-                  'models', 'upload', 'ask'];
-  function routeOf(input) {
+                  'models', 'upload', 'ask', 'conversations/export', 'conversations/import',
+                  'conversations/delete', 'conversations', 'auth/password', 'auth/logout'];
+  // /conversations/<id>: uma conversa (o id vai em conversationIdOf).
+  const CONVERSATION_RE = /\/conversations\/([^/]+)$/;
+  const pathOf = input => {
     const raw = typeof input === 'string' ? input : (input && input.url) || '';
-    const path = new URL(raw, location.href).pathname.replace(/\/+$/, '');
-    return ROUTES.find(route => path === '/' + route || path.endsWith('/' + route)) || null;
+    return new URL(raw, location.href).pathname.replace(/\/+$/, '');
+  };
+  function routeOf(input) {
+    const path = pathOf(input);
+    return ROUTES.find(route => path === '/' + route || path.endsWith('/' + route)) ||
+           (CONVERSATION_RE.test(path) ? 'conversation' : null);
   }
+  const conversationIdOf = input => decodeURIComponent(CONVERSATION_RE.exec(pathOf(input))[1]);
 
   function sseEvent(name, payload) {
     const data = typeof payload === 'string' ? payload.replace(/\n/g, '\ndata: ') : JSON.stringify(payload);
@@ -92,18 +101,82 @@ Na prática, isso troca uma integral para cada ponto de saída, de custo $O(N^2)
     return [...new Set(words)].slice(0, 6);
   }
 
+  // --- Conversas "da conta" (no app, no PostgreSQL; aqui, no localStorage) -----------
+  // Mesmo formato de ConversationService: [{id, title, turns: [{id, question,
+  // answer, status, keywords, figures, equations}]}], a mais recente primeiro.
+
+  const CONVERSATIONS_KEY = 'myllmadvisor_demo_conversations';
+  const TITLE_MAX_LEN = 60;
+
+  function loadConversations() {
+    try {
+      const list = JSON.parse(localStorage.getItem(CONVERSATIONS_KEY) || '[]');
+      return Array.isArray(list) ? list : [];
+    } catch (e) {
+      return [];
+    }
+  }
+
+  function saveConversations(list) {
+    try { localStorage.setItem(CONVERSATIONS_KEY, JSON.stringify(list)); } catch (e) { /* storage cheio */ }
+  }
+
+  function titleOf(question) {
+    const clean = String(question || '').trim().replace(/\s+/g, ' ');
+    return clean.length > TITLE_MAX_LEN ? clean.slice(0, TITLE_MAX_LEN).trim() + '…' : clean;
+  }
+
+  function startTurn(conversationId, turnId, question) {
+    const list = loadConversations();
+    const conversation = list.find(c => c.id === conversationId) ||
+                         { id: conversationId, title: titleOf(question), turns: [] };
+    conversation.turns.push({ id: turnId, question, answer: '', status: 'pending',
+                              keywords: [], figures: [], equations: [] });
+    saveConversations([conversation, ...list.filter(c => c.id !== conversationId)]);
+  }
+
+  // Turno excluído enquanto a resposta chegava: não volta (como o UPDATE do app).
+  function finishTurn(turnId, fields) {
+    const list = loadConversations();
+    const turn = list.flatMap(c => c.turns).find(t => t.id === turnId);
+    if (!turn) return;
+    Object.assign(turn, fields);
+    saveConversations(list);
+  }
+
+  function importConversations(conversations) {
+    let list = loadConversations();
+    let imported = 0;
+    for (const conversation of Array.isArray(conversations) ? conversations : []) {
+      const turns = (conversation.turns || []).filter(t => String(t.question || '').trim()).map(t => ({
+        id: uid(), question: String(t.question), answer: String(t.answer || ''),
+        status: t.status || 'done', keywords: t.keywords || [], figures: t.figures || [], equations: t.equations || []
+      }));
+      if (!turns.length) continue;
+      const id = conversation.id || uid();
+      list = [{ id, title: titleOf(conversation.title || turns[0].question), turns }, ...list.filter(c => c.id !== id)];
+      imported += 1;
+    }
+    saveConversations(list);
+    return imported;
+  }
+
   // --- /ask: resposta em streaming -------------------------------------------------
 
   function askResponse(body, signal) {
     const isFirstTurn = body.is_first_turn !== false;
     const answer = isFirstTurn ? FIRST_ANSWER : FOLLOW_UP_ANSWER;
+    const keywords = isFirstTurn ? keywordsOf(String(body.question || '')) : [];
+    const saving = Boolean(body.conversation_id && body.turn_id);
     const encoder = new TextEncoder();
     let aborted = false;
+    let sent = '';
 
     const stream = new ReadableStream({
       async start(controller) {
         const abort = () => {
           aborted = true;
+          if (saving) finishTurn(body.turn_id, { status: 'cancelled', answer: sent.trim() });
           try { controller.error(new DOMException('A requisição foi cancelada.', 'AbortError')); } catch (e) { /* já fechado */ }
         };
         if (signal) {
@@ -112,8 +185,9 @@ Na prática, isso troca uma integral para cada ponto de saída, de custo $O(N^2)
         }
         const send = (name, payload) => { if (!aborted) controller.enqueue(encoder.encode(sseEvent(name, payload))); };
 
+        if (saving) startTurn(body.conversation_id, body.turn_id, String(body.question || ''));
         await sleep(500);
-        if (isFirstTurn) send('keywords', keywordsOf(String(body.question || '')));
+        if (keywords.length) send('keywords', keywords);
         send('figures', [FIGURE]);
         send('equations', EQUATIONS);
         await sleep(700);  // "buscando na base e pensando"
@@ -121,10 +195,16 @@ Na prática, isso troca uma integral para cada ponto de saída, de custo $O(N^2)
         // Pedaços de poucas palavras, como chegam do modelo.
         const pieces = answer.match(/\S+\s*/g) || [];
         for (let i = 0; i < pieces.length && !aborted; i += 3) {
-          send('content', pieces.slice(i, i + 3).join(''));
+          const piece = pieces.slice(i, i + 3).join('');
+          sent += piece;
+          send('content', piece);
           await sleep(35);
         }
         if (aborted) return;
+        if (saving) {
+          finishTurn(body.turn_id, { status: 'done', answer: answer.trim(), keywords,
+                                     figures: [FIGURE], equations: EQUATIONS });
+        }
         send('done', 'ok');
         controller.close();
       }
@@ -140,7 +220,7 @@ Na prática, isso troca uma integral para cada ponto de saída, de custo $O(N^2)
 
   function stepsFor(file) {
     const steps = [];
-    if (firstJob) steps.push(['Carregando o Docling e os modelos (só no primeiro envio)', 2000]);
+    if (firstJob) steps.push(['Carregando o Docling e os modelos', 2000]);
     firstJob = false;
     steps.push(
       [`Convertendo ${file}`, 2500],
@@ -243,11 +323,31 @@ Na prática, isso troca uma integral para cada ponto de saída, de custo $O(N^2)
         return json({ ok: true, removed: 60 + Math.floor(Math.random() * 120) });
       }
       case 'upload/jobs': return json(jobs.map(publicJob));
-      case 'ask/cancel':
-      case 'ask/forget-turn': return json({ ok: true });
+      case 'ask/cancel': return json({ ok: true });
+      case 'ask/forget-turn': {
+        const list = loadConversations();
+        list.forEach(c => { c.turns = c.turns.filter(t => t.id !== body.turn_id); });
+        saveConversations(list);
+        return json({ ok: true });
+      }
       case 'ask':
         if (method !== 'POST') break;
         return askResponse(body, init.signal);
+      case 'conversations':
+        return json(loadConversations().map(({ id, title }) => ({ id, title })));
+      case 'conversation': {
+        const conversation = loadConversations().find(c => c.id === conversationIdOf(input));
+        return conversation ? json(conversation) : json({ ok: false, error: 'Conversa não encontrada.' });
+      }
+      case 'conversations/export': return json(loadConversations());
+      case 'conversations/import': return json({ ok: true, imported: importConversations(body.conversations) });
+      case 'conversations/delete':
+        saveConversations(loadConversations().filter(c => c.id !== body.id));
+        return json({ ok: true });
+      case 'auth/password':
+        await sleep(400);
+        return json({ ok: true });
+      case 'auth/logout': return json({ ok: true });
       default: break;
     }
     return realFetch(input, init);

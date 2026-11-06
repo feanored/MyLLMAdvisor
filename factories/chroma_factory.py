@@ -61,7 +61,7 @@ class ChromaCollectionFactory:
         Quem cria é o indexador (rag_papers.get_collection)."""
         meta = ChromaCollectionFactory.metadata(collection_name)
         if not meta and collection_name not in ChromaCollectionFactory._names():
-            raise LookupError(f'A base "{collection_name}" ainda não existe: envie um PDF em /upload para criá-la.')
+            raise LookupError("A sua base ainda não tem documentos: envie um PDF na tela Enviar PDFs.")
         kind = ChromaCollectionFactory.kind(collection_name)
         embedding_model = meta.get("embedding_model")
         client = ChromaClientFactory.create()

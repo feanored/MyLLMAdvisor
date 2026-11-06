@@ -163,32 +163,53 @@ class ChatService:
     @classmethod
     def stream_answer(cls, *, question, model, collection, think, contexto,
                        palavras_chave, max_distance, where, request_id, cancel_event,
-                       help_mode=False, conversation_id=None, is_first_turn=True):
+                       help_mode=False, conversation_id=None, is_first_turn=True,
+                       user_id=None, turn_id=None):
         """Gera a resposta como uma sequência de eventos de negócio
         `(nome, payload)`, formatados como SSE pelo controller
         (`_format_sse_event` em rag_web.py).
 
-        `conversation_id`: dá memória ao chat (ver ConversationService).
-        `is_first_turn`: decidido pelo front-end (se já existe turno na
-        tela), não pela memória do backend, que some num restart do
-        servidor."""
+        `conversation_id`: dá memória ao chat; com `user_id` e `turn_id`, o
+        turno também é gravado na conversa do usuário (ver
+        ConversationService). `is_first_turn`: decidido pelo front-end (se já
+        existe turno na tela)."""
+        saving = bool(user_id and conversation_id and turn_id)
+        turn_open = False      # start_turn gravou a pergunta: o desfecho precisa ser gravado
+        answer_parts = []
+        shown_keywords, figures, equations = [], [], []
+
+        def close_turn(status, answer):
+            nonlocal turn_open
+            if turn_open:
+                turn_open = False
+                ConversationService.finish_turn(turn_id, status, answer, shown_keywords, figures, equations)
+
         try:
             if not collection:
                 yield ("error_msg", "Nenhuma collection selecionada.")
                 return
 
-            history = ConversationService.history(conversation_id)
+            history = ConversationService.history(user_id, conversation_id) if user_id else []
+
+            if saving:
+                error = ConversationService.start_turn(user_id, conversation_id, turn_id, question)
+                if error:
+                    yield ("error_msg", error)
+                    return
+                turn_open = True
 
             rows, keywords, error = RetrievalService.retrieve_rows(
                 collection, question, NRAG_RESULTS, where,
                 max_distance=max_distance, use_keywords=palavras_chave,
             )
             if error:
+                close_turn("error", error)
                 yield ("error_msg", error)
                 return
 
             # Só anuncia as palavras-chave no primeiro turno da conversa.
             if contexto and keywords and is_first_turn:
+                shown_keywords = keywords
                 yield ("keywords", keywords)
 
             figures = RetrievalService.extract_figures(rows)
@@ -227,7 +248,6 @@ class ChatService:
             messages = history + [{"role": "user", "content": prompt}]
 
             client = OllamaClientFactory.create()
-            answer_parts = []
             cancelled = False
             for chunk in client.chat(
                 model=model,
@@ -247,12 +267,11 @@ class ChatService:
                     yield ("content", msg.content)
 
             if cancelled:
+                close_turn("cancelled", "".join(answer_parts).strip())
                 yield ("cancelled", "ok")
                 return
 
             answer = "".join(answer_parts).strip()
-            if conversation_id:
-                ConversationService.append_turn(conversation_id, question, answer)
 
             # Resgata figuras citadas na resposta que não vieram no top N.
             if contexto and answer:
@@ -267,9 +286,14 @@ class ChatService:
                     equations = equations + extra_equations
                     yield ("equations", equations)
 
+            close_turn("done", answer)
             yield ("done", "ok")
 
         except Exception as e:
+            try:
+                close_turn("error", str(e))
+            except Exception:
+                pass  # banco fora do ar: o erro original é o que importa mostrar
             yield ("error_msg", str(e))
         finally:
             cls._unregister(request_id)

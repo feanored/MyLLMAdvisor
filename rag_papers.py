@@ -51,6 +51,9 @@ import chromadb
 from pathlib import Path
 from chromadb import Documents, EmbeddingFunction, Embeddings
 from chromadb.utils.embedding_functions import register_embedding_function
+# FIGURES_DIR: figuras extraídas dos PDFs indexados pela linha de comando (as
+# do site vão para uma subpasta por conta, ver index_pdf e UserStorage).
+from models.config import DEFAULT_BASE, FIGURES_DIR
 from models.metadata_fields import iter_collection_metadatas, refresh_filter_fields_cache
 
 # ---------------------------------------------------------------------------
@@ -58,8 +61,9 @@ from models.metadata_fields import iter_collection_metadatas, refresh_filter_fie
 # ---------------------------------------------------------------------------
 
 DB_PATH = "./.chromadb"
-COLLECTION_NAME = "rag_documentos"
-FIGURES_DIR = Path("./.chromadb/figures")
+# A base da linha de comando, sem dono: para passá-la a uma conta do site,
+# `python manage_users.py adopt-documents <email>` (o site dá a cada conta a sua).
+COLLECTION_NAME = DEFAULT_BASE
 
 # Modelo de embedding servido pelo Ollama local (multilíngue, 8k tokens de
 # contexto); o mesmo do CHUNK_TOKENIZER abaixo, pra o tamanho dos chunks bater.
@@ -460,11 +464,13 @@ def is_indexed(col, pdf: Path, h: str | None = None) -> bool:
     return bool(got.get("ids"))
 
 
-def index_pdf(col, pdf: Path, pipeline: dict, log=print) -> int:
+def index_pdf(col, pdf: Path, pipeline: dict, log=print, figures_dir: Path = FIGURES_DIR) -> int:
     """Converte, chunka e indexa UM PDF (texto, figuras e equações),
     substituindo qualquer versão anterior do mesmo arquivo (mesmo `source`)
     na collection. Devolve o número de chunks gravados. `log` recebe as
-    mensagens de progresso (console na CLI, tela no upload)."""
+    mensagens de progresso (console na CLI, tela no upload); `figures_dir`,
+    onde as imagens das figuras são salvas (no upload, a pasta da conta)."""
+    figures_dir.mkdir(parents=True, exist_ok=True)
     h = file_hash(pdf)
     converter, chunker = pipeline["converter"], pipeline["chunker"]
     describer = pipeline["describer"]
@@ -504,7 +510,7 @@ def index_pdf(col, pdf: Path, pipeline: dict, log=print) -> int:
         if img is None:
             continue
         log(f"Descrevendo figuras ({pic_i + 1}/{len(pictures)})")
-        fig_path = FIGURES_DIR / f"{pdf.stem}__fig{pic_i:03d}.png"
+        fig_path = figures_dir / f"{pdf.stem}__fig{pic_i:03d}.png"
         img.save(fig_path)
 
         fig_text = f"[FIGURA] {caption}" if caption else "[FIGURA sem legenda]"

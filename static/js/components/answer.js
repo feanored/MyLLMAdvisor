@@ -243,24 +243,10 @@ function mathIdOf(source) {
 
 // Até a fórmula ser renderizada (ou se o MathJax nem carregar), o encaixe
 // mostra o próprio LaTeX. `data-source` guarda o LaTeX pra quando o HTML for
-// reaproveitado fora desta sessão (ver restoreMath e answer-export.js).
+// reaproveitado fora desta página (ver answer-export.js).
 function mathSlotHtml(source) {
   const attr = escapeHtml(source).replace(/"/g, '&quot;');
   return `<span class="math-slot" data-math-id="${mathIdOf(source)}" data-source="${attr}">${escapeHtml(source)}</span>`;
-}
-
-// Conversa salva reaberta: o HTML guardado traz as fórmulas já renderizadas,
-// mas o CSS dos símbolos que o MathJax gera não vem junto (só existe na sessão
-// em que elas foram renderizadas). Volta cada encaixe ao LaTeX e renderiza de
-// novo — uma vez por fórmula, pelo mesmo cache.
-export function restoreMath(root) {
-  root.querySelectorAll('.math-slot[data-source]').forEach(slot => {
-    const source = slot.dataset.source;
-    slot.dataset.mathId = mathIdOf(source);
-    slot.classList.remove('rendered');
-    slot.textContent = source;
-  });
-  fillMathSlots(root);
 }
 
 function parseMathSource(source) {
